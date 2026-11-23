@@ -1,0 +1,90 @@
+===============================================================================
+           SAFESTORE - SCÉNARIO 2 : ALERTE (anomalie détectée)
+===============================================================================
+
+Client : un client anonyme, dans le même magasin.
+
+-------------------------------------------------------------------------------
+ÉTAPE 1 - Entrée dans le magasin (aucun modèle)
+-------------------------------------------------------------------------------
+Le client entre. Une session anonyme est créée (ID client).
+Chacune de ses actions est enregistrée comme un événement.
+
+-------------------------------------------------------------------------------
+ÉTAPE 2 - Les courses -> le RNN collecte la séquence
+-------------------------------------------------------------------------------
+Séquence enregistrée :
+
+    t1  ENTER
+    t2  RAYON : Électronique  -> PICK : Écouteurs
+    t3  RAYON : Électronique  -> PICK : Chargeur de téléphone
+    t4  RAYON : Vêtements     (reste 6 min, zone peu couverte par les caméras)
+    t5  RAYON : Snacks        -> PICK : Bouteille d'eau
+    t6  GO_TO_CHECKOUT
+
+Le RNN (LSTM) repère un enchaînement associé au vol :
+  - petits articles de valeur pris en premier,
+  - arrêt prolongé dans une zone peu surveillée,
+  - un article bon marché pris juste avant la caisse.
+
+    >> Sortie RNN : score d'anomalie = 0.81  (suspect)
+
+-------------------------------------------------------------------------------
+ÉTAPE 3 - Arrivée en caisse -> le CNN reconnaît les articles
+-------------------------------------------------------------------------------
+Le client pose uniquement la bouteille d'eau sur la zone de caisse.
+Le CNN analyse l'image :
+
+    +--------------------+-----------+
+    | Produit détecté    | Confiance |
+    +--------------------+-----------+
+    | Bouteille d'eau    |   0.96    |
+    +--------------------+-----------+
+
+Comparaison avec la séquence (écouteurs, chargeur, bouteille d'eau) :
+
+    >> Résultat : 3 articles pris, 1 article vu, 2 MANQUANTS
+       (Écouteurs, Chargeur de téléphone)
+
+-------------------------------------------------------------------------------
+ÉTAPE 4 - Décision -> la Régression Logistique tranche
+-------------------------------------------------------------------------------
+La régression logistique reçoit le vecteur de caractéristiques suivant :
+
+    +--------------------------------------------+-----------+
+    | Caractéristique                            | Valeur    |
+    +--------------------------------------------+-----------+
+    | Score d'anomalie RNN                       | 0.81      |
+    | Articles pris - articles vus par le CNN    | 2         |
+    | Confiance moyenne du CNN                   | 0.96      |
+    | Montant du panier                          | 0.80 EUR  |
+    | Durée de la visite                         | 19 min    |
+    +--------------------------------------------+-----------+
+
+    >> P(anomalie) = 0.92  >  seuil 0.5
+
+    ==> DÉCISION : ALERTE - appel d'un agent de sécurité
+
+-------------------------------------------------------------------------------
+ÉTAPE 5 - Ce qui se passe
+-------------------------------------------------------------------------------
+Côté client :
+  L'écran affiche un message neutre, sans accusation :
+  "Merci de patienter un instant, un conseiller arrive pour vous aider."
+
+Côté agent de sécurité :
+  Notification sur sa tablette :
+  "Caisse 3 - 2 articles pris mais non présentés : Écouteurs, Chargeur."
+
+L'agent vérifie discrètement. Il peut s'agir d'un oubli (articles restés
+dans un sac) ou d'une tentative de vol. La décision finale reste humaine.
+
+-------------------------------------------------------------------------------
+RÉCAPITULATIF - Rôle de chaque modèle
+-------------------------------------------------------------------------------
+  Moment              | Modèle               | Question posée                     | Réponse
+  --------------------+----------------------+------------------------------------+---------------
+  Dans les rayons     | RNN                  | Le parcours est-il normal ?        | Non (0.81)
+  En caisse           | CNN                  | Quels produits sont présents ?     | 1/3 trouvés
+  Avant le paiement   | Régression Logistique| Valider ou appeler un agent ?      | ALERTE (0.92)
+===============================================================================

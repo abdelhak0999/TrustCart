@@ -1,0 +1,86 @@
+===============================================================================
+            SAFESTORE - SCÉNARIO 1 : PASSAGE VALIDÉ (cas normal)
+===============================================================================
+
+Cliente : Yasmine, 24 ans, fait ses courses de la semaine après les cours.
+
+-------------------------------------------------------------------------------
+ÉTAPE 1 - Entrée dans le magasin (aucun modèle)
+-------------------------------------------------------------------------------
+Yasmine entre dans le magasin. Une session anonyme est créée (ID client).
+À partir de ce moment, chacune de ses actions est enregistrée comme un événement.
+
+-------------------------------------------------------------------------------
+ÉTAPE 2 - Les courses -> le RNN collecte la séquence
+-------------------------------------------------------------------------------
+Yasmine parcourt les rayons. Ses actions sont ajoutées à sa séquence :
+
+    t1  ENTER
+    t2  RAYON : Produits laitiers  -> PICK : Lait 1L
+    t3  RAYON : Boulangerie        -> PICK : Pain
+    t4  RAYON : Snacks             -> PICK : Chips -> PUT_BACK : Chips
+    t5  RAYON : Boissons           -> PICK : Jus d'orange
+    t6  GO_TO_CHECKOUT
+
+Yasmine ne remarque rien. Le RNN (LSTM) lit la séquence pas à pas et met à jour
+son état caché, une "mémoire" de la visite.
+Prendre des chips puis les reposer est un comportement normal, très fréquent
+dans les données d'entraînement.
+
+    >> Sortie RNN : score d'anomalie = 0.08  (très normal)
+
+-------------------------------------------------------------------------------
+ÉTAPE 3 - Arrivée en caisse -> le CNN reconnaît les articles
+-------------------------------------------------------------------------------
+Yasmine pose ses articles sur la zone de caisse. Elle ne scanne rien.
+Une caméra prend une photo et le CNN détecte et classe chaque produit :
+
+    +------------------+-----------+
+    | Produit détecté  | Confiance |
+    +------------------+-----------+
+    | Lait 1L          |   0.97    |
+    | Pain             |   0.95    |
+    | Jus d'orange     |   0.93    |
+    +------------------+-----------+
+
+Le système compare avec les articles pris selon la séquence
+(lait, pain, jus ; les chips ont été reposées).
+
+    >> Résultat : 3 articles pris, 3 articles vus, 0 manquant
+
+-------------------------------------------------------------------------------
+ÉTAPE 4 - Décision -> la Régression Logistique tranche
+-------------------------------------------------------------------------------
+La régression logistique reçoit le vecteur de caractéristiques suivant :
+
+    +--------------------------------------------+-----------+
+    | Caractéristique                            | Valeur    |
+    +--------------------------------------------+-----------+
+    | Score d'anomalie RNN                       | 0.08      |
+    | Articles pris - articles vus par le CNN    | 0         |
+    | Confiance moyenne du CNN                   | 0.95      |
+    | Montant du panier                          | 6.40 EUR  |
+    | Durée de la visite                         | 12 min    |
+    +--------------------------------------------+-----------+
+
+    >> P(anomalie) = 0.04  <  seuil 0.5
+
+    ==> DÉCISION : VALIDÉ
+
+-------------------------------------------------------------------------------
+ÉTAPE 5 - Ce que voit Yasmine
+-------------------------------------------------------------------------------
+L'écran affiche ses 3 articles et le total : 6.40 EUR.
+Elle présente sa carte bancaire et repart.
+Durée totale du passage en caisse : environ 10 secondes.
+-> C'est le côté "sans friction" du projet.
+
+-------------------------------------------------------------------------------
+RÉCAPITULATIF - Rôle de chaque modèle
+-------------------------------------------------------------------------------
+  Moment              | Modèle               | Question posée                     | Réponse
+  --------------------+----------------------+------------------------------------+-------------
+  Dans les rayons     | RNN                  | Le parcours est-il normal ?        | Oui (0.08)
+  En caisse           | CNN                  | Quels produits sont présents ?     | 3/3 trouvés
+  Avant le paiement   | Régression Logistique| Valider ou appeler un agent ?      | VALIDÉ (0.04)
+===============================================================================

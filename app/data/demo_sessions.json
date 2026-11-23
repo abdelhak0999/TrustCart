@@ -1,0 +1,322 @@
+[
+ {
+  "id": 210326,
+  "kind": "normal",
+  "label": 0,
+  "expected_score": 0.0,
+  "events": [
+   {
+    "action": "LOOK",
+    "itemid": 343808,
+    "aisle": 1,
+    "price": 24.91,
+    "dt_sec": 0.0
+   },
+   {
+    "action": "PICK",
+    "itemid": 343808,
+    "aisle": 1,
+    "price": 24.91,
+    "dt_sec": 6.5
+   },
+   {
+    "action": "LOOK",
+    "itemid": 302248,
+    "aisle": 1,
+    "price": 17.81,
+    "dt_sec": 72.3
+   },
+   {
+    "action": "PICK",
+    "itemid": 302248,
+    "aisle": 1,
+    "price": 17.81,
+    "dt_sec": 29.4
+   },
+   {
+    "action": "LOOK",
+    "itemid": 191640,
+    "aisle": 1,
+    "price": 19.97,
+    "dt_sec": 75.4
+   },
+   {
+    "action": "LOOK",
+    "itemid": 285677,
+    "aisle": 1,
+    "price": 20.11,
+    "dt_sec": 117.3
+   },
+   {
+    "action": "LOOK",
+    "itemid": 164191,
+    "aisle": 1,
+    "price": 16.24,
+    "dt_sec": 13.8
+   },
+   {
+    "action": "PICK",
+    "itemid": 164191,
+    "aisle": 1,
+    "price": 16.24,
+    "dt_sec": 2.8
+   },
+   {
+    "action": "PAY",
+    "itemid": 343808,
+    "aisle": 1,
+    "price": 24.91,
+    "dt_sec": 159.3
+   },
+   {
+    "action": "PAY",
+    "itemid": 192653,
+    "aisle": 1,
+    "price": 10.37,
+    "dt_sec": 0.0
+   },
+   {
+    "action": "PAY",
+    "itemid": 150700,
+    "aisle": 1,
+    "price": 9.87,
+    "dt_sec": 0.0
+   },
+   {
+    "action": "PAY",
+    "itemid": 302248,
+    "aisle": 1,
+    "price": 17.81,
+    "dt_sec": 0.0
+   },
+   {
+    "action": "PAY",
+    "itemid": 164191,
+    "aisle": 1,
+    "price": 16.24,
+    "dt_sec": 0.0
+   },
+   {
+    "action": "PAY",
+    "itemid": 7804,
+    "aisle": 1,
+    "price": 16.01,
+    "dt_sec": 0.0
+   }
+  ]
+ },
+ {
+  "id": 1746847,
+  "kind": "conceal",
+  "label": 1,
+  "expected_score": 0.9978,
+  "events": [
+   {
+    "action": "LOOK",
+    "itemid": 71934,
+    "aisle": 8,
+    "price": 21.91,
+    "dt_sec": 0.0
+   },
+   {
+    "action": "LOOK",
+    "itemid": 437929,
+    "aisle": 8,
+    "price": 10.5,
+    "dt_sec": 206.7
+   },
+   {
+    "action": "LOOK",
+    "itemid": 250487,
+    "aisle": 14,
+    "price": 164.61,
+    "dt_sec": 36.5
+   },
+   {
+    "action": "PICK",
+    "itemid": 250487,
+    "aisle": 14,
+    "price": 164.61,
+    "dt_sec": 27.9
+   },
+   {
+    "action": "PICK",
+    "itemid": 71934,
+    "aisle": 8,
+    "price": 21.91,
+    "dt_sec": 1578.8
+   },
+   {
+    "action": "PAY",
+    "itemid": 71934,
+    "aisle": 8,
+    "price": 21.91,
+    "dt_sec": 374.2
+   }
+  ]
+ },
+ {
+  "id": 1745710,
+  "kind": "alibi",
+  "label": 1,
+  "expected_score": 0.9989,
+  "events": [
+   {
+    "action": "LOOK",
+    "itemid": 382751,
+    "aisle": 21,
+    "price": 179.55,
+    "dt_sec": 0.0
+   },
+   {
+    "action": "PICK",
+    "itemid": 382751,
+    "aisle": 21,
+    "price": 179.55,
+    "dt_sec": 52.0
+   },
+   {
+    "action": "PICK",
+    "itemid": 317435,
+    "aisle": 1,
+    "price": 37.88,
+    "dt_sec": 6.5
+   },
+   {
+    "action": "PICK",
+    "itemid": 172135,
+    "aisle": 8,
+    "price": 17.43,
+    "dt_sec": 5.8
+   },
+   {
+    "action": "PICK",
+    "itemid": 269177,
+    "aisle": 17,
+    "price": 7.53,
+    "dt_sec": 6.9
+   },
+   {
+    "action": "PAY",
+    "itemid": 269177,
+    "aisle": 17,
+    "price": 7.53,
+    "dt_sec": 107.5
+   }
+  ]
+ },
+ {
+  "id": 1746700,
+  "kind": "spree",
+  "label": 1,
+  "expected_score": 0.9994,
+  "events": [
+   {
+    "action": "PICK",
+    "itemid": 144076,
+    "aisle": 2,
+    "price": 97.87,
+    "dt_sec": 0.0
+   },
+   {
+    "action": "PICK",
+    "itemid": 293038,
+    "aisle": 2,
+    "price": 77.21,
+    "dt_sec": 1.7
+   },
+   {
+    "action": "PICK",
+    "itemid": 203117,
+    "aisle": 2,
+    "price": 56.98,
+    "dt_sec": 5.5
+   },
+   {
+    "action": "PICK",
+    "itemid": 124827,
+    "aisle": 2,
+    "price": 77.6,
+    "dt_sec": 2.9
+   },
+   {
+    "action": "PICK",
+    "itemid": 47682,
+    "aisle": 0,
+    "price": 8.75,
+    "dt_sec": 20.2
+   },
+   {
+    "action": "PAY",
+    "itemid": 47682,
+    "aisle": 0,
+    "price": 8.75,
+    "dt_sec": 591.2
+   }
+  ]
+ },
+ {
+  "id": 1531750,
+  "kind": "false_alarm",
+  "label": 0,
+  "expected_score": 0.9832,
+  "events": [
+   {
+    "action": "LOOK",
+    "itemid": 4067,
+    "aisle": 21,
+    "price": 143.29,
+    "dt_sec": 0.0
+   },
+   {
+    "action": "LOOK",
+    "itemid": 38706,
+    "aisle": 21,
+    "price": 107.33,
+    "dt_sec": 48.1
+   },
+   {
+    "action": "PICK",
+    "itemid": 38706,
+    "aisle": 21,
+    "price": 107.33,
+    "dt_sec": 6.3
+   },
+   {
+    "action": "LOOK",
+    "itemid": 299038,
+    "aisle": 19,
+    "price": 4.77,
+    "dt_sec": 239.1
+   },
+   {
+    "action": "PICK",
+    "itemid": 299038,
+    "aisle": 19,
+    "price": 4.77,
+    "dt_sec": 2.7
+   },
+   {
+    "action": "PICK",
+    "itemid": 158666,
+    "aisle": 8,
+    "price": 17.0,
+    "dt_sec": 137.6
+   },
+   {
+    "action": "PICK",
+    "itemid": 368060,
+    "aisle": 8,
+    "price": 18.19,
+    "dt_sec": 118.2
+   },
+   {
+    "action": "PICK",
+    "itemid": 390591,
+    "aisle": 8,
+    "price": 3.27,
+    "dt_sec": 16.0
+   }
+  ]
+ }
+]

@@ -1,0 +1,133 @@
+===============================================================================
+               SAFESTORE - MODÈLE 3 : RÉGRESSION LOGISTIQUE
+     Rôle : décision finale (validation du paiement ou appel d'un agent)
+===============================================================================
+
+-------------------------------------------------------------------------------
+1. QU'EST-CE QUE LA RÉGRESSION LOGISTIQUE ?
+-------------------------------------------------------------------------------
+La régression logistique est un modèle de classification binaire : elle répond
+par OUI ou NON à une question, avec une probabilité.
+
+Principe :
+  1. Elle calcule une somme pondérée des caractéristiques :
+         z = b + w1*x1 + w2*x2 + ... + wn*xn
+  2. Elle passe ce résultat dans la fonction sigmoïde :
+         P(anomalie) = 1 / (1 + e^(-z))
+     -> on obtient une probabilité entre 0 et 1.
+  3. On compare cette probabilité à un seuil (ex. 0.5) :
+         P >= seuil  -> ALERTE
+         P <  seuil  -> VALIDÉ
+
+Les poids (w1, w2, ...) sont appris pendant l'entraînement en minimisant la
+log-loss (entropie croisée binaire).
+
+Pourquoi une régression logistique ici ?
+  - Interprétable : chaque poids montre l'influence d'un facteur. On peut
+    expliquer pourquoi un client a été arrêté, ce qui est important
+    éthiquement et juridiquement.
+  - Rapide : la décision est quasi instantanée en caisse.
+  - Seuil réglable : le magasin choisit le compromis entre fausses alertes
+    et vols non détectés.
+  - Elle combine des signaux venant de sources différentes (CNN + RNN +
+    données du panier).
+
+-------------------------------------------------------------------------------
+2. RÔLE DANS SAFESTORE
+-------------------------------------------------------------------------------
+Question posée : "Compte tenu de TOUT ce qu'on sait, on valide ou on appelle
+un agent ?"
+
+  Entrées (caractéristiques) :
+    x1 : score d'anomalie du RNN                    (parcours)
+    x2 : articles pris - articles vus par le CNN    (cohérence panier)
+    x3 : confiance moyenne du CNN                   (fiabilité de la vision)
+    x4 : montant du panier                          (contexte)
+    x5 : durée de la visite                         (contexte)
+
+  Sortie  : P(anomalie) -> décision VALIDÉ / ALERTE
+
+Exemple de poids appris (illustratifs) :
+    +----------------------------------+--------+-------------------------+
+    | Caractéristique                  | Poids  | Interprétation          |
+    +----------------------------------+--------+-------------------------+
+    | Score RNN                        |  +3.0  | parcours suspect -> +   |
+    | Articles manquants               |  +2.5  | facteur le plus décisif |
+    | Confiance CNN                    |  -1.0  | vision fiable -> moins  |
+    |                                  |        | de doute                |
+    | Montant du panier                |  -0.2  | faible influence        |
+    | Durée de la visite               |  +0.3  | faible influence        |
+    | Biais (b)                        |  -3.5  | par défaut : normal     |
+    +----------------------------------+--------+-------------------------+
+
+-------------------------------------------------------------------------------
+3. LA RÉGRESSION LOGISTIQUE DANS LE SCÉNARIO "VALIDÉ" (Yasmine)
+-------------------------------------------------------------------------------
+Caractéristiques reçues :
+
+    +--------------------------------------------+-----------+
+    | Score d'anomalie RNN                       | 0.08      |
+    | Articles pris - articles vus par le CNN    | 0         |
+    | Confiance moyenne du CNN                   | 0.95      |
+    | Montant du panier                          | 6.40 EUR  |
+    | Durée de la visite                         | 12 min    |
+    +--------------------------------------------+-----------+
+
+Raisonnement :
+  - RNN : parcours normal.
+  - CNN : aucun article manquant, avec une vision fiable.
+  - Aucun signal d'alerte.
+
+    >> P(anomalie) = 0.04  <  0.5
+    ==> VALIDÉ : Yasmine paie et repart en environ 10 secondes.
+
+-------------------------------------------------------------------------------
+4. LA RÉGRESSION LOGISTIQUE DANS LE SCÉNARIO "ALERTE"
+-------------------------------------------------------------------------------
+Caractéristiques reçues :
+
+    +--------------------------------------------+-----------+
+    | Score d'anomalie RNN                       | 0.81      |
+    | Articles pris - articles vus par le CNN    | 2         |
+    | Confiance moyenne du CNN                   | 0.96      |
+    | Montant du panier                          | 0.80 EUR  |
+    | Durée de la visite                         | 19 min    |
+    +--------------------------------------------+-----------+
+
+Raisonnement :
+  - RNN : parcours suspect.
+  - CNN : 2 articles manquants, et la confiance élevée exclut une erreur
+    de reconnaissance.
+  - Les deux sources indiquent la même chose : le signal est fort.
+
+    >> P(anomalie) = 0.92  >  0.5
+    ==> ALERTE : message neutre au client + notification à l'agent de
+        sécurité ("2 articles non présentés : Écouteurs, Chargeur").
+
+-------------------------------------------------------------------------------
+5. POURQUOI NE PAS LAISSER LE RNN OU LE CNN DÉCIDER SEUL ?
+-------------------------------------------------------------------------------
+  - Le RNN seul : un client indécis au parcours étrange serait arrêté
+    même s'il présente tous ses articles (fausse alerte).
+  - Le CNN seul : il ne sait pas ce qui a été pris dans les rayons, donc il
+    ne peut pas savoir qu'un article manque.
+  - La régression logistique combine les deux points de vue et donne une
+    décision plus fiable et explicable.
+
+-------------------------------------------------------------------------------
+6. LIMITES ET POINTS D'ATTENTION
+-------------------------------------------------------------------------------
+  - Modèle linéaire : il ne capture pas de relations complexes entre les
+    caractéristiques (sinon : Random Forest, XGBoost, mais ils sont moins
+    interprétables).
+  - Il faut normaliser les caractéristiques (StandardScaler) pour que les
+    poids soient comparables.
+  - Choix du seuil : un seuil bas donne plus d'alertes (moins de vols ratés,
+    plus de clients dérangés), un seuil haut l'inverse. Il se choisit avec
+    la courbe ROC / précision-rappel.
+  - Classes déséquilibrées : utiliser class_weight="balanced".
+  - La décision finale reste humaine : l'agent vérifie avant toute action.
+
+Métriques d'évaluation : matrice de confusion, précision, rappel, F1-score,
+AUC-ROC, taux de fausses alertes.
+===============================================================================

@@ -1,0 +1,118 @@
+===============================================================================
+          SAFESTORE - MODÈLE 2 : RNN (Réseau de Neurones Récurrent)
+       Rôle : suivi de la cohérence séquentielle du parcours client
+===============================================================================
+
+-------------------------------------------------------------------------------
+1. QU'EST-CE QU'UN RNN ?
+-------------------------------------------------------------------------------
+Un RNN (Recurrent Neural Network) est un réseau de neurones conçu pour les
+données séquentielles, où l'ORDRE des éléments compte (texte, séries
+temporelles, suites d'événements).
+
+Principe :
+  - Le RNN lit la séquence élément par élément.
+  - À chaque pas, il combine l'élément courant avec un ÉTAT CACHÉ, une sorte de
+    mémoire qui résume tout ce qu'il a vu avant.
+  - À la fin de la séquence, cet état caché représente le parcours entier et
+    sert à produire une prédiction.
+
+      x1 --> [RNN] --> h1
+                |
+      x2 --> [RNN] --> h2
+                |
+      x3 --> [RNN] --> h3 --> ... --> hN --> score d'anomalie
+
+Variante utilisée : LSTM (Long Short-Term Memory)
+  Un RNN simple oublie vite les événements anciens (problème du gradient qui
+  disparaît). Le LSTM ajoute des "portes" (oubli, entrée, sortie) qui décident
+  quoi garder et quoi oublier. Il peut donc relier un événement du début du
+  parcours à un événement de la fin. Le GRU est une alternative plus légère.
+
+Pourquoi un RNN ici (et pas un CNN) ?
+  - Les parcours ont des longueurs différentes : le RNN les gère directement.
+  - L'ordre des actions compte : "prendre -> reposer" est normal,
+    "prendre -> zone non couverte -> rien en caisse" est suspect.
+  - Il capture les dépendances longues dans le parcours.
+
+-------------------------------------------------------------------------------
+2. RÔLE DANS SAFESTORE
+-------------------------------------------------------------------------------
+Question posée : "Le parcours de ce client est-il normal ?"
+
+  Entrée  : séquence d'événements encodés
+            (ENTER, RAYON, PICK, PUT_BACK, durée, GO_TO_CHECKOUT...)
+            Chaque événement est transformé en vecteur (embedding / one-hot
+            + durée normalisée).
+  Sortie  : score d'anomalie entre 0 (normal) et 1 (très suspect)
+  Dataset : Customer Shopping Sequence (Kaggle)
+
+Architecture proposée :
+  Embedding -> LSTM (64 ou 128 unités) -> Dense -> Sigmoïde
+
+  Variante possible : autoencodeur LSTM entraîné uniquement sur des parcours
+  normaux. Si l'erreur de reconstruction est élevée, le parcours est anormal.
+  C'est utile quand on a peu d'exemples de vols étiquetés.
+
+Ce que le RNN envoie à la régression logistique :
+  - Le score d'anomalie du parcours
+  - La liste des articles pris (pour la comparaison avec le CNN)
+
+-------------------------------------------------------------------------------
+3. LE RNN DANS LE SCÉNARIO "VALIDÉ" (Yasmine)
+-------------------------------------------------------------------------------
+Séquence lue :
+
+    t1  ENTER
+    t2  Produits laitiers -> PICK Lait
+    t3  Boulangerie       -> PICK Pain
+    t4  Snacks            -> PICK Chips -> PUT_BACK Chips
+    t5  Boissons          -> PICK Jus d'orange
+    t6  GO_TO_CHECKOUT
+
+Analyse :
+  - Parcours fluide, rayons alimentaires classiques.
+  - PICK puis PUT_BACK : hésitation normale, très fréquente.
+  - Durée cohérente (12 min) avec le nombre d'articles.
+
+    >> Score d'anomalie = 0.08 (normal)
+    >> Articles pris transmis : Lait, Pain, Jus d'orange
+
+-------------------------------------------------------------------------------
+4. LE RNN DANS LE SCÉNARIO "ALERTE"
+-------------------------------------------------------------------------------
+Séquence lue :
+
+    t1  ENTER
+    t2  Électronique -> PICK Écouteurs
+    t3  Électronique -> PICK Chargeur
+    t4  Vêtements    (6 min, zone peu couverte)
+    t5  Snacks       -> PICK Bouteille d'eau
+    t6  GO_TO_CHECKOUT
+
+Analyse :
+  - Petits articles de valeur, faciles à cacher, pris en premier.
+  - Long arrêt dans une zone peu surveillée, sans rien prendre.
+  - Article bon marché pris juste avant la caisse (achat "alibi").
+  - Grâce à sa mémoire (LSTM), le modèle relie l'électronique (t2-t3)
+    à l'arrêt suspect (t4) et à la fin du parcours (t5).
+
+    >> Score d'anomalie = 0.81 (suspect)
+    >> Articles pris transmis : Écouteurs, Chargeur, Bouteille d'eau
+
+-------------------------------------------------------------------------------
+5. LIMITES ET POINTS D'ATTENTION
+-------------------------------------------------------------------------------
+  - Un parcours inhabituel n'est pas forcément un vol (client indécis,
+    personne âgée, client qui cherche un produit). Le RNN seul produirait
+    des fausses alertes. C'est pourquoi il ne décide pas seul.
+  - Données déséquilibrées : les vols sont rares. Il faut du
+    sur-échantillonnage, des poids de classes ou une approche autoencodeur.
+  - Le RNN ne voit pas ce qui est réellement posé en caisse : c'est le rôle
+    du CNN.
+  - Alternatives possibles : CNN 1D temporel ou Transformer, mais le LSTM
+    est adapté à des séquences courtes d'événements.
+
+Métriques d'évaluation : AUC-ROC, précision, rappel (important : ne pas rater
+les anomalies), F1-score.
+===============================================================================

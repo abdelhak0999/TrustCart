@@ -1,0 +1,8 @@
+# TrustCart demo app (Python 3.13; TensorFlow does not support 3.14 yet)
+tensorflow-cpu==2.21.*   # loads the RNN; same version as training on Kaggle
+keras==3.13.*
+streamlit
+openai                   # client for Gemini and Ollama (OpenAI-compatible endpoints)
+python-dotenv
+pandas
+pyarrow
