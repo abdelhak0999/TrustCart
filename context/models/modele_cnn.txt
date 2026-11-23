@@ -1,0 +1,100 @@
+===============================================================================
+        SAFESTORE - MODÈLE 1 : CNN (Réseau de Neurones Convolutif)
+          Rôle : reconnaissance optique des articles déposés en caisse
+===============================================================================
+
+-------------------------------------------------------------------------------
+1. QU'EST-CE QU'UN CNN ?
+-------------------------------------------------------------------------------
+Un CNN (Convolutional Neural Network) est un réseau de neurones spécialisé dans
+le traitement des images. Une image est une grille de pixels en 2D : un CNN
+exploite cette structure spatiale au lieu de traiter les pixels un par un.
+
+Principe :
+  - Couches de convolution : de petits filtres (ex. 3x3) glissent sur l'image
+    et détectent des motifs locaux. Les premières couches détectent des bords
+    et des couleurs, les suivantes des formes, et les dernières des objets
+    entiers (un logo, une bouteille, un emballage).
+  - Couches de pooling : réduisent la taille de l'image en gardant
+    l'information importante. Le modèle devient moins sensible à la position
+    exacte de l'objet.
+  - Couches entièrement connectées + softmax : transforment les motifs
+    détectés en une probabilité pour chaque classe de produit.
+
+Pourquoi un CNN ici ?
+  - Il reconnaît un produit où qu'il soit dans l'image (invariance par
+    translation).
+  - Il partage ses poids entre toutes les positions : beaucoup moins de
+    paramètres qu'un réseau classique.
+  - C'est la méthode de référence en vision par ordinateur.
+
+-------------------------------------------------------------------------------
+2. RÔLE DANS SAFESTORE
+-------------------------------------------------------------------------------
+Question posée : "Quels produits sont réellement présents en caisse ?"
+
+  Entrée  : photo de la zone de caisse (ex. 224x224 pixels, RGB)
+  Sortie  : liste des produits détectés + score de confiance pour chacun
+  Dataset : Retail Product Recognition (Kaggle)
+
+Architecture proposée :
+  - Transfer learning à partir d'un modèle pré-entraîné (ResNet50,
+    MobileNetV2 ou EfficientNet), ré-entraîné sur les classes de produits
+    du magasin.
+  - MobileNet est intéressant pour une caisse : rapide et léger.
+
+Ce que le CNN envoie à la régression logistique :
+  - Nombre d'articles vus vs nombre d'articles pris (différence)
+  - Confiance moyenne des détections
+
+-------------------------------------------------------------------------------
+3. LE CNN DANS LE SCÉNARIO "VALIDÉ" (Yasmine)
+-------------------------------------------------------------------------------
+Image analysée : 3 produits posés sur la zone de caisse.
+
+    +------------------+-----------+
+    | Produit détecté  | Confiance |
+    +------------------+-----------+
+    | Lait 1L          |   0.97    |
+    | Pain             |   0.95    |
+    | Jus d'orange     |   0.93    |
+    +------------------+-----------+
+
+Comparaison avec la séquence (lait, pain, jus ; chips reposées) :
+  -> 3 pris, 3 vus, 0 manquant
+  -> Confiance moyenne : 0.95
+
+Conclusion du CNN : tout ce qui a été pris est présent. Rien de suspect.
+
+-------------------------------------------------------------------------------
+4. LE CNN DANS LE SCÉNARIO "ALERTE"
+-------------------------------------------------------------------------------
+Image analysée : 1 seul produit posé sur la zone de caisse.
+
+    +--------------------+-----------+
+    | Produit détecté    | Confiance |
+    +--------------------+-----------+
+    | Bouteille d'eau    |   0.96    |
+    +--------------------+-----------+
+
+Comparaison avec la séquence (écouteurs, chargeur, bouteille d'eau) :
+  -> 3 pris, 1 vu, 2 MANQUANTS (Écouteurs, Chargeur)
+  -> Confiance moyenne : 0.96
+
+Conclusion du CNN : la confiance est élevée, donc ce n'est pas une erreur de
+reconnaissance. Deux articles n'ont vraiment pas été présentés.
+
+-------------------------------------------------------------------------------
+5. LIMITES ET POINTS D'ATTENTION
+-------------------------------------------------------------------------------
+  - Produits superposés ou cachés : un article peut en masquer un autre.
+    -> Solution : plusieurs caméras ou demander d'étaler les articles.
+  - Produits visuellement proches (ex. deux saveurs du même jus).
+    -> Plus d'exemples d'entraînement par classe, data augmentation.
+  - Nouveaux produits : ils nécessitent un ré-entraînement du modèle.
+  - Le CNN ne voit que l'instant présent en caisse. Il ne sait pas ce qui
+    s'est passé dans les rayons : c'est le rôle du RNN.
+
+Métriques d'évaluation : accuracy, précision, rappel, F1-score par classe,
+matrice de confusion.
+===============================================================================

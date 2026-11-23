@@ -1,0 +1,19 @@
+{
+  "max_len": 50,
+  "pad_id": 0,
+  "action_vocab": {
+    "LOOK": 1,
+    "PICK": 2,
+    "PAY": 3
+  },
+  "aisle_offset": 1,
+  "n_aisles": 24,
+  "aisle_vocab_size": 25,
+  "num_features": [
+    "log_dt",
+    "log_price"
+  ],
+  "numeric_transform": "log1p, clipped at 0; standardisation is inside the model",
+  "truncation": "keep last max_len events, first kept event gets dt = 0",
+  "padding": "right"
+}

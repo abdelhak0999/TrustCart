@@ -1,0 +1,150 @@
+{
+  "threshold": 0.9074876308441162,
+  "test_metrics": {
+    "roc_auc": 0.9961834032620401,
+    "pr_auc": 0.9661851188240328,
+    "precision": 0.9164733178654292,
+    "recall": 0.8719646799116998,
+    "false_alarm_rate": 0.007947019867549669,
+    "threshold": 0.9074876308441162,
+    "f1": 0.8936651583710408
+  },
+  "baselines_test": {
+    "length only": {
+      "roc_auc": 0.6321421087769055,
+      "pr_auc": 0.11672654142821938
+    },
+    "session aggregates": {
+      "roc_auc": 0.9758368297686749,
+      "pr_auc": 0.7609406742757627
+    }
+  },
+  "hyperparameters": {
+    "emb_action": 4,
+    "emb_aisle": 8,
+    "lstm_units": 64,
+    "dense_units": 32,
+    "dropout": 0.3,
+    "learning_rate": 0.001,
+    "batch_size": 256,
+    "max_epochs": 40,
+    "early_stopping_patience": 6
+  },
+  "best_epoch": 11,
+  "split_sizes": {
+    "train": 23252,
+    "val": 4983,
+    "test": 4983
+  },
+  "tensorflow_version": "2.21.0",
+  "keras_version": "3.13.2",
+  "calibration": {
+    "method": "platt",
+    "a": 1.0917361488573865,
+    "b": -2.5880021730373888,
+    "threshold_calibrated": 0.4762179595084977,
+    "brier_before": 0.029091473026287673,
+    "brier_after": 0.013232048367688517,
+    "ece_before": 0.04402818834921598,
+    "ece_after": 0.003824788680815587
+  },
+  "robustness": {
+    "seeds": {
+      "runs": [
+        {
+          "seed": 42,
+          "roc_auc": 0.9962,
+          "pr_auc": 0.9662,
+          "precision": 0.9165,
+          "recall": 0.872,
+          "false_alarm_rate": 0.0079
+        },
+        {
+          "seed": 43,
+          "roc_auc": 0.9954,
+          "pr_auc": 0.9693,
+          "precision": 0.9451,
+          "recall": 0.8366,
+          "false_alarm_rate": 0.0049
+        },
+        {
+          "seed": 44,
+          "roc_auc": 0.9934,
+          "pr_auc": 0.9634,
+          "precision": 0.9225,
+          "recall": 0.8675,
+          "false_alarm_rate": 0.0073
+        },
+        {
+          "seed": 45,
+          "roc_auc": 0.9957,
+          "pr_auc": 0.9686,
+          "precision": 0.9049,
+          "recall": 0.9029,
+          "false_alarm_rate": 0.0095
+        }
+      ],
+      "mean": {
+        "roc_auc": 0.9952,
+        "pr_auc": 0.9669,
+        "precision": 0.9223,
+        "recall": 0.8698,
+        "false_alarm_rate": 0.0074
+      },
+      "std": {
+        "roc_auc": 0.0012,
+        "pr_auc": 0.0026,
+        "precision": 0.0169,
+        "recall": 0.0271,
+        "false_alarm_rate": 0.0019
+      }
+    },
+    "leave_one_pattern_out": [
+      {
+        "held_out_pattern": "conceal",
+        "recall_when_seen": 0.821,
+        "roc_auc": 0.9343,
+        "pr_auc": 0.39,
+        "precision": 0.6061,
+        "recall": 0.1429,
+        "false_alarm_rate": 0.0029
+      },
+      {
+        "held_out_pattern": "alibi",
+        "recall_when_seen": 0.943,
+        "roc_auc": 0.9877,
+        "pr_auc": 0.8855,
+        "precision": 0.8261,
+        "recall": 0.8471,
+        "false_alarm_rate": 0.0062
+      },
+      {
+        "held_out_pattern": "spree",
+        "recall_when_seen": 0.846,
+        "roc_auc": 0.724,
+        "pr_auc": 0.2683,
+        "precision": 0.5769,
+        "recall": 0.1923,
+        "false_alarm_rate": 0.0049
+      }
+    ],
+    "false_alarm_cues": [
+      {
+        "group": "correctly accepted",
+        "conceal_cue": 0.0,
+        "spree_cue": 0.0105,
+        "alibi_cue": 0.0,
+        "any_cue": 0.0105,
+        "sessions": 4494
+      },
+      {
+        "group": "false alarm",
+        "conceal_cue": 0.0,
+        "spree_cue": 0.1667,
+        "alibi_cue": 0.0833,
+        "any_cue": 0.25,
+        "sessions": 36
+      }
+    ]
+  }
+}
