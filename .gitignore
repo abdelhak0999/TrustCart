@@ -23,11 +23,20 @@ access_token
 *.pt
 *.pkl
 
-# Models directory: ignore future models by default, but KEEP models/rnn/ for the app
+# Models directory: ignore future models by default, but KEEP the app artifacts
 models/*
 !models/rnn/
+!models/cnn/
+!models/decision/
 
-# Explicitly whitelist the RNN artifacts needed by Streamlit & Logistic Regression
+# Explicitly whitelist the artifacts needed by Streamlit & the decision model
 !models/rnn/*.keras
 !models/rnn/*.parquet
 !models/rnn/*.csv
+!models/cnn/*.keras
+!models/cnn/*.json
+!models/cnn/sample_crops/
+!models/cnn/sample_crops/*.jpg
+!models/cnn/sample_crops/*.json
+!models/decision/*.json
+!models/decision/*.parquet

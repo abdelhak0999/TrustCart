@@ -7,6 +7,9 @@ behind an alert. It cannot change the outcome: the statistical model is the only
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import TypedDict
+
+from langgraph.graph import END, START, StateGraph
 
 from .. import decision as decision_module
 from ..config import AgentSettings
@@ -48,6 +51,17 @@ class DecisionReport:
         return self.decision.outcome == ALERT
 
 
+class DecisionState(TypedDict, total=False):
+    """LangGraph state of the Decision agent."""
+    path: PathReport
+    checkout: CheckoutReport
+    events: list[dict]
+    decision: Decision
+    features: dict
+    facts: dict
+    report: DecisionReport
+
+
 class DecisionAgent(BaseAgent):
     name = "Agent Décision"
     role = "spécialiste de la fusion des signaux et de la règle d'alerte"
@@ -55,27 +69,48 @@ class DecisionAgent(BaseAgent):
 
     def __init__(self, settings: AgentSettings, mode: str = "hybrid"):
         super().__init__(settings, mode)
+        self.graph = self._build_graph()
 
-    def evaluate(self, path_report: PathReport, checkout_report: CheckoutReport,
-                 events: list[dict]) -> DecisionReport:
-        """Run the deterministic decision model; no LLM participates in the outcome."""
+    def _build_graph(self):
+        """decide (deterministic logistic regression) -> narrate (template or LLM summary)."""
+        builder = StateGraph(DecisionState)
+        builder.add_node("decide", self._decide)
+        builder.add_node("narrate", self._narrate)
+        builder.add_edge(START, "decide")
+        builder.add_edge("decide", "narrate")
+        builder.add_edge("narrate", END)
+        return builder.compile(name="decision_agent")
+
+    def _decide(self, state: DecisionState) -> dict:
+        """No LLM participates in the outcome: this node is the only place it is computed."""
+        path_report, checkout_report = state["path"], state["checkout"]
         final = decision_module.decide(path_report.risk, path_report.threshold,
                                        path_report.visit, checkout_report.view)
         model_features = decision_module.features(path_report.risk, path_report.visit,
                                                   checkout_report.view)
         facts = build_facts(final, path_report.risk, path_report.threshold, path_report.visit,
-                            checkout_report.view, events)
+                            checkout_report.view, state["events"])
         facts["features_du_modele_de_decision"] = {
             key: (round(value, 3) if isinstance(value, float) else value)
             for key, value in model_features.items()
         }
         facts["source_de_la_decision"] = final.source
-        reliability = decision_module.reliability() if decision_module.LOGISTIC_REGRESSION_AVAILABLE else None
-        template = self._template_summary(facts)
-        summary = self.summarise(facts, template, SUMMARY_REQUEST,
+        return {"decision": final, "features": model_features, "facts": facts}
+
+    def _narrate(self, state: DecisionState) -> dict:
+        facts = state["facts"]
+        reliability = (decision_module.reliability()
+                       if decision_module.LOGISTIC_REGRESSION_AVAILABLE else None)
+        summary = self.summarise(facts, self._template_summary(facts), SUMMARY_REQUEST,
                                  allow_llm=(self.mode == "full_llm"))
-        return DecisionReport(decision=final, features=model_features, facts=facts,
-                              reliability=reliability, summary=summary)
+        return {"report": DecisionReport(decision=state["decision"], features=state["features"],
+                                         facts=facts, reliability=reliability, summary=summary)}
+
+    def evaluate(self, path_report: PathReport, checkout_report: CheckoutReport,
+                 events: list[dict]) -> DecisionReport:
+        """Run the agent graph: deterministic decision, then narration."""
+        return self.graph.invoke({"path": path_report, "checkout": checkout_report,
+                                  "events": events})["report"]
 
     @staticmethod
     def _template_summary(facts: dict) -> str:
@@ -90,6 +125,9 @@ class DecisionAgent(BaseAgent):
                 signals.append(f"parcours à {facts['risque_du_parcours_pourcent']} % de risque")
             if facts["articles_pris_non_presentes"]:
                 signals.append(f"{len(facts['articles_pris_non_presentes'])} article(s) pris non présenté(s)")
+            if facts.get("articles_declares_non_reconnus_par_la_camera"):
+                signals.append(f"{len(facts['articles_declares_non_reconnus_par_la_camera'])} "
+                               "article(s) déclaré(s) non confirmé(s) par la caméra")
             text += ("Signaux : " + " et ".join(signals) + ". " if signals else
                      "Le modèle combine plusieurs signaux faibles. ")
             return text + "Une vérification discrète est recommandée, sans accuser le client."

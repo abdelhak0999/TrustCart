@@ -36,8 +36,39 @@ class AgentReply:
     note: str | None = None     # why templates were used instead of the language model
 
 
+class ChatModel:
+    """Minimal chat client for any OpenAI-compatible endpoint (Gemini, Ollama). No LangChain."""
+
+    def __init__(self, settings: AgentSettings):
+        self.model = settings.model
+        self._client = openai.OpenAI(api_key=settings.api_key, base_url=settings.base_url,
+                                     timeout=30.0, max_retries=1)
+
+    def invoke(self, messages: list[dict]) -> str:
+        response = self._client.chat.completions.create(model=self.model, messages=messages)
+        return response.choices[0].message.content or ""
+
+
+def build_chat_model(settings: AgentSettings) -> ChatModel | None:
+    """Create the chat client for Gemini or Ollama, or None in template mode."""
+    if settings.backend == "templates":
+        return None
+    return ChatModel(settings)
+
+
+def to_chat_messages(system_prompt: str, history: list[dict], question: str) -> list[dict]:
+    """System prompt + sanitised ``{"role", "content"}`` history + the new question."""
+    messages = [{"role": "system", "content": system_prompt}]
+    for item in history:
+        role = item.get("role", "user")
+        messages.append({"role": role if role in ("assistant", "system") else "user",
+                         "content": item.get("content", "")})
+    messages.append({"role": "user", "content": question})
+    return messages
+
+
 class BaseAgent:
-    """Common OpenAI-compatible client (Gemini / Ollama) with automatic template fallback."""
+    """Common OpenAI-compatible chat wrapper (Gemini / Ollama) with automatic template fallback."""
 
     name = "Agent"
     role = "assistant TrustCart"
@@ -51,32 +82,25 @@ class BaseAgent:
     def __init__(self, settings: AgentSettings, mode: str = "hybrid"):
         self.settings = settings
         self.mode = mode
-        self._client = None
-        if settings.backend != "templates" and mode != "templates":
-            self._client = openai.OpenAI(api_key=settings.api_key, base_url=settings.base_url,
-                                         timeout=30.0, max_retries=1)
+        self._llm = None if mode == "templates" else build_chat_model(settings)
 
     @property
     def llm_available(self) -> bool:
-        return self._client is not None
+        return self._llm is not None
 
     @property
     def source(self) -> str:
-        if self._client is None:
+        if self._llm is None:
             return TEMPLATE_SOURCE
         backend = "Gemini" if self.settings.backend == "gemini" else "Ollama"
         return f"{backend} ({self.settings.model})"
 
     def _ask(self, facts: dict, history: list[dict], question: str,
              system_prompt: str | None = None) -> str:
-        prompt = (system_prompt or self.system_prompt).format(
+        prompt_text = (system_prompt or self.system_prompt).format(
             facts=json.dumps(facts, ensure_ascii=False, indent=1, default=str)
         )
-        messages = [{"role": "system", "content": prompt},
-                    *history,
-                    {"role": "user", "content": question}]
-        response = self._client.chat.completions.create(model=self.settings.model, messages=messages)
-        text = (response.choices[0].message.content or "").strip()
+        text = self._llm.invoke(to_chat_messages(prompt_text, history, question)).strip()
         if not text:
             raise ValueError("empty answer")
         return text
@@ -84,7 +108,7 @@ class BaseAgent:
     def _with_fallback(self, facts: dict, history: list[dict], question: str, template: str,
                        system_prompt: str | None = None) -> AgentReply:
         """Ask the LLM, but never raise: on any failure return the offline French template."""
-        if self._client is None:
+        if self._llm is None:
             return AgentReply(template, TEMPLATE_SOURCE, self.name)
         try:
             return AgentReply(self._ask(facts, history, question, system_prompt), self.source, self.name)
@@ -108,7 +132,7 @@ class BaseAgent:
 
     def summarise(self, facts: dict, template: str, question: str, allow_llm: bool) -> AgentReply:
         """Return an LLM-written summary when allowed, otherwise the deterministic template."""
-        if allow_llm and self._client is not None:
+        if allow_llm and self._llm is not None:
             return self._with_fallback(facts, [], question, template)
         return AgentReply(template, TEMPLATE_SOURCE, self.name)
 

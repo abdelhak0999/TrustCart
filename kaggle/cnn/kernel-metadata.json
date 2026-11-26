@@ -1,0 +1,15 @@
+{
+  "id": "hamziabdelhak/trustcart-cnn-pipeline",
+  "title": "TrustCart CNN pipeline",
+  "code_file": "cnn.ipynb",
+  "language": "python",
+  "kernel_type": "notebook",
+  "is_private": true,
+  "enable_gpu": true,
+  "enable_internet": true,
+  "dataset_sources": [
+    "diyer22/retail-product-checkout-dataset"
+  ],
+  "competition_sources": [],
+  "kernel_sources": []
+}

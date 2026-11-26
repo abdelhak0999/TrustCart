@@ -2,7 +2,9 @@
 
 The decision is 100% deterministic and belongs to the trained logistic regression. The LLM agents
 in ``agents/`` may explain it, but they can never change it. The model combines the RNN path risk,
-the basket consistency measured at checkout, the CNN confidence and two context features.
+the basket consistency measured at checkout by the CNN (items picked but not confirmed by the
+camera), the number of declared items the CNN did not confirm (substitution), the CNN-verified
+cart total and the visit duration.
 
 The metadata (coefficients, intercept, scaler, threshold, metrics) lives in
 ``models/decision/decision_meta.json`` and was produced by ``scripts/train_decision.py`` with a
@@ -51,6 +53,7 @@ def features(path_risk: float, visit: VisitSummary, checkout: CheckoutView) -> d
         "cnn_confidence": checkout.confidence,
         "cart_total": sum(visit.items[i].price for i in checkout.item_ids if i in visit.items),
         "visit_duration_min": visit.duration_min,
+        "items_rejected_by_cnn": len(checkout.rejected_ids),   # 0 in manual mode (no camera)
     }
 
 

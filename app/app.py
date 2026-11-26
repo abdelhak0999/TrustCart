@@ -118,23 +118,32 @@ with right:
         options=candidates,
         default=list(dict.fromkeys(visit.paid)),
         format_func=lambda i: visit.items[i].label,
-        help="Source de vérité du panier pour la décision. Par défaut, les articles payés dans le parcours.",
+        help="Articles déclarés par le client. Chacun est photographié : seul ce que le CNN "
+             "reconnaît compte comme présenté pour la décision.",
         key=f"presented_{kind}",
     )
-    crop_options = [entry["supercategory"] for entry in cnn.sample_crops()] if cnn.AVAILABLE else []
-    selected_crops = st.multiselect(
-        "Photos de caisse analysées par le CNN (optionnel)",
-        options=crop_options,
-        default=[],
-        format_func=lambda c: CATEGORY_LABELS.get(c, c),
-        help="Choisissez des vignettes de test : le CNN MobileNetV2 les classe et fournit sa confiance. "
-             "Sans photo, la caisse reste en saisie manuelle.",
-        key=f"crops_{kind}",
-    )
+    camera = st.toggle("Caméra CNN active", value=cnn.AVAILABLE, disabled=not cnn.AVAILABLE,
+                       help="Désactivée : saisie manuelle, le CNN n'intervient pas dans la décision.",
+                       key=f"camera_{kind}")
+    swaps = {}
+    if camera and presented:
+        st.caption("Photos prises par la caméra (catégorie du catalogue de chaque article) :")
+        st.caption(" · ".join(f"{visit.items[i].item_id} → "
+                              f"{CATEGORY_LABELS.get(cnn.catalogue_category(i), cnn.catalogue_category(i))}"
+                              for i in presented))
+        with st.expander("Simuler une substitution (fraude à l'étiquette)"):
+            swapped_item = st.selectbox("Article déclaré", [None] + presented,
+                                        format_func=lambda i: "aucun" if i is None else visit.items[i].label,
+                                        key=f"swap_item_{kind}")
+            if swapped_item is not None:
+                categories = [c for c in cnn.categories() if c != cnn.catalogue_category(swapped_item)]
+                swaps[swapped_item] = st.selectbox(
+                    "Produit réellement posé sur le plateau", categories,
+                    format_func=lambda c: CATEGORY_LABELS.get(c, c), key=f"swap_cat_{kind}")
     if st.button("Passer en caisse", type="primary", width="stretch"):
-        with st.spinner("Analyse du parcours, de la caisse et décision…"):
+        with st.spinner("Analyse du parcours, photos CNN et décision…"):
             st.session_state.result = coordinator.run_checkout(
-                events, presented, image_paths=selected_crops or None)
+                events, presented, camera=camera, swaps=swaps or None)
             st.session_state.chat = []
 
 result = st.session_state.result
@@ -174,7 +183,7 @@ with model_col:
     if probability is not None:
         st.progress(min(probability, 1.0))
     facts = result.decision.facts
-    st.markdown(f"Articles pris : **{len(facts['articles_pris'])}** · posés en caisse : "
+    st.markdown(f"Articles pris : **{len(facts['articles_pris'])}** · confirmés par le CNN : "
                 f"**{len(facts['articles_poses_en_caisse'])}** · non présentés : "
                 f"**{len(facts['articles_pris_non_presentes'])}**")
     for cue in facts["indices_dans_le_parcours"]:
@@ -204,12 +213,19 @@ with st.expander("Activité des agents (traçabilité)", expanded=False):
 
     st.markdown("**Vision en caisse**")
     st.write(result.checkout.vision_status)
-    if result.checkout.view.predictions:
+    view = result.checkout.view
+    if view.predictions:
+        verified = set(view.item_ids)
         st.dataframe(pd.DataFrame([{
-            "Image": prediction.source,
-            "Catégorie reconnue": CATEGORY_LABELS.get(prediction.label, prediction.label),
+            "Article déclaré": item_id,
+            "Catégorie attendue": CATEGORY_LABELS.get(cnn.catalogue_category(item_id),
+                                                      cnn.catalogue_category(item_id)),
+            "Photo": prediction.source,
+            "Catégorie reconnue (CNN)": CATEGORY_LABELS.get(prediction.label, prediction.label),
             "Confiance": f"{prediction.confidence:.1%}",
-        } for prediction in result.checkout.view.predictions]), hide_index=True, width="stretch")
+            "Confirmé": "✅" if item_id in verified else "❌",
+        } for item_id, prediction in zip(view.declared_ids, view.predictions)]),
+            hide_index=True, width="stretch")
 
 # ---------------------------------------------------------------- 4. questions
 st.divider()

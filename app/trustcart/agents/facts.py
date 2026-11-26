@@ -38,12 +38,15 @@ def build_facts(decision: Decision, path_risk: float, threshold: float, visit: V
         "indices_dans_le_parcours": list(visit.cues),
         "articles_pris": [visit.items[i].label for i in visit.picked],
         "articles_poses_en_caisse": [visit.items[i].label for i in checkout.item_ids if i in visit.items],
+        "articles_declares_non_reconnus_par_la_camera": [
+            visit.items[i].label if i in visit.items else f"Article {i}" for i in checkout.rejected_ids],
         "articles_pris_non_presentes": [visit.items[i].label for i in visit.picked if i not in presented],
         "total_articles_poses_eur": round(sum(visit.items[i].price for i in presented if i in visit.items), 2),
         "duree_visite_min": round(visit.duration_min, 1),
         "plus_longue_pause_min": round(visit.longest_pause_min, 1),
         "reconnaissance_produits": (
-            f"CNN : confiance moyenne {checkout.confidence:.0%} ; catégories reconnues : "
+            f"CNN : {len(checkout.item_ids)}/{len(checkout.declared_ids)} article(s) confirmé(s), "
+            f"confiance moyenne {checkout.confidence:.0%} ; catégories reconnues : "
             f"{', '.join(cnn_labels) if cnn_labels else 'aucune'}"
             if checkout.source == "cnn" and checkout.confidence is not None
             else ("saisie manuelle : aucune photo de caisse analysée"

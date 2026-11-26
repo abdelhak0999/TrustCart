@@ -1,0 +1,97 @@
+{
+  "version": 2,
+  "backbone": "MobileNetV2",
+  "img_size": 224,
+  "num_classes": 17,
+  "supercategories": [
+    "alcohol",
+    "candy",
+    "canned_food",
+    "chocolate",
+    "dessert",
+    "dried_food",
+    "dried_fruit",
+    "drink",
+    "gum",
+    "instant_drink",
+    "instant_noodles",
+    "milk",
+    "personal_hygiene",
+    "puffed_food",
+    "seasoner",
+    "stationery",
+    "tissue"
+  ],
+  "input": "raw RGB in [0, 255]; preprocessing, temperature scaling and softmax are inside the model",
+  "temperature": 0.41,
+  "test_metrics": {
+    "accuracy": 0.9942,
+    "macro_f1": 0.9937,
+    "ece": 0.002,
+    "n_test_crops": 9771
+  },
+  "train_metrics_clean": {
+    "accuracy": 0.9946,
+    "macro_f1": 0.9946,
+    "ece_uncalibrated": 0.1114,
+    "ece": 0.0034,
+    "n_crops": 5000
+  },
+  "val_metrics": {
+    "accuracy": 0.9947,
+    "macro_f1": 0.9943,
+    "ece_uncalibrated": 0.1109,
+    "ece": 0.001,
+    "n_crops": 14471
+  },
+  "test_metrics_full": {
+    "accuracy": 0.9942,
+    "macro_f1": 0.9937,
+    "ece_uncalibrated": 0.112,
+    "ece": 0.002,
+    "n_crops": 9771
+  },
+  "overfitting_gap_train_minus_test_accuracy": 0.0004,
+  "per_class_test_f1": {
+    "alcohol": 0.994,
+    "candy": 0.986,
+    "canned_food": 0.994,
+    "chocolate": 0.992,
+    "dessert": 0.996,
+    "dried_food": 0.99,
+    "dried_fruit": 0.987,
+    "drink": 0.995,
+    "gum": 0.999,
+    "instant_drink": 0.99,
+    "instant_noodles": 0.996,
+    "milk": 0.997,
+    "personal_hygiene": 0.995,
+    "puffed_food": 0.996,
+    "seasoner": 0.998,
+    "stationery": 0.989,
+    "tissue": 1.0
+  },
+  "splits": {
+    "train_crops": 67120,
+    "train_checkout_crops": 59130,
+    "train_turntable_crops": 7990,
+    "val_crops": 14471,
+    "test_crops": 9771,
+    "test_images": 800,
+    "grouping": "by image; val = 20 % of val2019 images; test = whole test2019 images, never trained on"
+  },
+  "training": {
+    "label_smoothing": 0.1,
+    "optimizer": "AdamW (wd 1e-4)",
+    "dropout": 0.4,
+    "head_lr": 0.001,
+    "fine_tune_lr": "3e-5 cosine",
+    "fine_tune_layers": 50,
+    "early_stopping": "val_loss, patience 3, restore best",
+    "class_weight": "sqrt-inverse frequency",
+    "epochs_run": 20,
+    "seed": 42,
+    "augmentation": "rot90, h/v flip, zoom-crop 0.75-1, brightness, contrast, saturation, hue"
+  },
+  "tensorflow_version": "2.21.0"
+}

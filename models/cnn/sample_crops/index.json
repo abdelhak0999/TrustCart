@@ -1,0 +1,104 @@
+[
+  {
+    "supercategory": "alcohol",
+    "label": 0,
+    "file": "alcohol.jpg",
+    "test_confidence": 1.0
+  },
+  {
+    "supercategory": "candy",
+    "label": 1,
+    "file": "candy.jpg",
+    "test_confidence": 1.0
+  },
+  {
+    "supercategory": "canned_food",
+    "label": 2,
+    "file": "canned_food.jpg",
+    "test_confidence": 1.0
+  },
+  {
+    "supercategory": "chocolate",
+    "label": 3,
+    "file": "chocolate.jpg",
+    "test_confidence": 1.0
+  },
+  {
+    "supercategory": "dessert",
+    "label": 4,
+    "file": "dessert.jpg",
+    "test_confidence": 1.0
+  },
+  {
+    "supercategory": "dried_food",
+    "label": 5,
+    "file": "dried_food.jpg",
+    "test_confidence": 1.0
+  },
+  {
+    "supercategory": "dried_fruit",
+    "label": 6,
+    "file": "dried_fruit.jpg",
+    "test_confidence": 1.0
+  },
+  {
+    "supercategory": "drink",
+    "label": 7,
+    "file": "drink.jpg",
+    "test_confidence": 1.0
+  },
+  {
+    "supercategory": "gum",
+    "label": 8,
+    "file": "gum.jpg",
+    "test_confidence": 1.0
+  },
+  {
+    "supercategory": "instant_drink",
+    "label": 9,
+    "file": "instant_drink.jpg",
+    "test_confidence": 1.0
+  },
+  {
+    "supercategory": "instant_noodles",
+    "label": 10,
+    "file": "instant_noodles.jpg",
+    "test_confidence": 1.0
+  },
+  {
+    "supercategory": "milk",
+    "label": 11,
+    "file": "milk.jpg",
+    "test_confidence": 1.0
+  },
+  {
+    "supercategory": "personal_hygiene",
+    "label": 12,
+    "file": "personal_hygiene.jpg",
+    "test_confidence": 1.0
+  },
+  {
+    "supercategory": "puffed_food",
+    "label": 13,
+    "file": "puffed_food.jpg",
+    "test_confidence": 1.0
+  },
+  {
+    "supercategory": "seasoner",
+    "label": 14,
+    "file": "seasoner.jpg",
+    "test_confidence": 1.0
+  },
+  {
+    "supercategory": "stationery",
+    "label": 15,
+    "file": "stationery.jpg",
+    "test_confidence": 1.0
+  },
+  {
+    "supercategory": "tissue",
+    "label": 16,
+    "file": "tissue.jpg",
+    "test_confidence": 1.0
+  }
+]

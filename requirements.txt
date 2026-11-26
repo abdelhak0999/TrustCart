@@ -2,7 +2,9 @@
 tensorflow-cpu==2.21.*   # loads the RNN; same version as training on Kaggle
 keras==3.13.*
 streamlit
-openai                   # client for Gemini and Ollama (OpenAI-compatible endpoints)
+langgraph                # per-agent graphs + orchestrator (app/trustcart/agents)
+openai                   # chat client for the OpenAI-compatible Gemini and Ollama endpoints
 python-dotenv
 pandas
 pyarrow
+scikit-learn             # decision model: train scripts/train_decision.py and load its metadata

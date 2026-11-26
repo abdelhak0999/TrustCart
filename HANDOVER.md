@@ -12,32 +12,41 @@ App name chosen: **TrustCart**.
 ### Architecture (decided, do not change without reason)
 
 ```
-  INPUTS                 MODELS                   DECISION                 AGENT
+  INPUTS                 MODELS                   DECISION                 AGENTS
 ┌──────────────┐     ┌────────────────┐
 │ Customer path│────►│ RNN (LSTM)     │──┐
 │ LOOK/PICK/PAY│     │ ✅ READY       │  │     ┌──────────────────┐     ┌────────────────────┐
-└──────────────┘     └────────────────┘  ├────►│ Logistic         │────►│ Explanation agent  │
-┌──────────────┐     ┌────────────────┐  │     │ regression       │     │ (1 LLM: Gemini)    │
-│ Checkout     │────►│ CNN            │──┤     │ ⬜ NOT STARTED   │     │ ✅ BUILT           │
-│ photo        │     │ ⬜ NOT STARTED │  │     │ → VALIDATED/ALERT│     │ writes messages,   │
-└──────────────┘     └────────────────┘  │     └──────────────────┘     │ answers questions, │
-┌──────────────┐                         │      🟡 for now: ALERT if    │ NEVER decides      │
-│ Cart data    │─────────────────────────┘         RNN risk ≥ 0.476     └─────────┬──────────┘
+└──────────────┘     └────────────────┘  ├────►│ Logistic         │────►│ Agent RNN          │
+┌──────────────┐     ┌────────────────┐  │     │ regression       │     │ Agent CNN          │
+│ Checkout     │────►│ CNN MobileNetV2│──┤     │ ✅ READY         │     │ Agent Décision     │
+│ photo/manual │     │ ✅ READY       │  │     │ → VALIDATED/ALERT│     │ Coordinateur       │
+└──────────────┘     └────────────────┘  │     └──────────────────┘     │ explain, never     │
+┌──────────────┐                         │      threshold = 0.5044      │ decide             │
+│ Cart data    │─────────────────────────┘      (chosen on val)         └─────────┬──────────┘
 └──────────────┘                                                                  ▼
-                                                                    Streamlit app (✅ BUILT)
+                                                                     Streamlit app (✅ BUILT)
 ```
 
 Key principles:
-- **The 3 models decide; the LLM agent only explains.** It must never change a decision (ethics: stopping a customer).
-- One agent, not one per model. No LangChain/LangGraph: the OpenAI-compatible client talks to Gemini (free key) or Ollama.
-- The customer screen always uses fixed neutral wording (never accuses). Only staff messages come from the LLM.
-- If the LLM fails (no key, quota, network), the app falls back to pre-written French templates and never crashes.
+- **The 3 models decide; the 4 agents only explain.** The logistic regression produces 100 % of the
+  VALIDATED/ALERT outcomes. No agent can override or re-open a decision (ethics: stopping a customer).
+- **One agent per model + one coordinator.** `RNNAgent` → `PathReport`, `CNNAgent` → `CheckoutReport`,
+  `DecisionAgent` → `DecisionReport`, `CoordinatorAgent` orchestrates, writes the staff briefing and
+  routes Q&A. LangGraph only (no LangChain): each agent is a compiled `infer/decide -> narrate`
+  StateGraph; the coordinator runs a checkout graph (RNN ∥ CNN -> Decision -> briefing) and a Q&A graph
+  (LLM router with keyword fallback -> `Send` to specialists -> synthesise). LLM calls use the plain OpenAI-compatible `openai`
+  client (Gemini or Ollama).
+- The customer screen always uses fixed neutral wording (never accuses). Only staff messages come from
+  the LLM (or the offline templates).
+- If the LLM fails (no key, quota, network, unexpected error), every agent falls back to pre-written
+  French templates and never crashes. `AGENT_MODE=templates` forces fully offline mode.
 - User-facing language: **French**. Code and comments: English.
 
 ### Team split
-- **RNN + app + agent**: done (this handover).
-- **CNN** (product recognition, RPC dataset on Kaggle `diyer22/retail-product-checkout-dataset`): a teammate, not started. The user does NOT want the AI to do the CNN for now.
-- **Logistic regression**: not started (needs RNN + CNN outputs).
+- **RNN + app + agents**: done.
+- **CNN** (product recognition, RPC dataset on Kaggle `diyer22/retail-product-checkout-dataset`): done
+  and wired into `app/trustcart/cnn.py`.
+- **Logistic regression**: done and wired into `app/trustcart/decision.py`.
 
 ## 2. Folder map
 
@@ -49,8 +58,9 @@ Projet/
 ├── .gitignore
 ├── notebooks/
 │   ├── rnn.ipynb                ← full RNN pipeline, 80 cells, phases 0–14 (runs on Kaggle)
-│   └── cnn.ipynb                ← empty, teammate's
+│   └── cnn.ipynb                ← CNN pipeline (RPC, MobileNetV2)
 ├── kaggle/rnn/                  ← copy of rnn.ipynb + kernel-metadata.json used to run it on Kaggle via CLI
+├── kaggle/cnn/                  ← copy of cnn.ipynb + kernel-metadata.json
 ├── models/rnn/                  ← trained RNN, ready to use
 │   ├── rnn_model.keras          ← Keras 3.13 / TF 2.21 model
 │   ├── rnn_inference.py         ← SessionScorer: raw events → calibrated risk (score), raw_score, is_anomaly
@@ -59,20 +69,37 @@ Projet/
 │   ├── injection_config.json    ← thresholds used to simulate thefts
 │   ├── rnn_scores.parquet       ← RNN score of every session + split (train/val/test) → logistic regression data
 │   └── item_prices.csv          ← synthetic price per item (shared by all parts)
+├── models/cnn/                  ← trained MobileNetV2 (17 retail supercategories)
+│   ├── cnn_model.keras
+│   ├── cnn_meta.json
+│   └── sample_crops/            ← 17 verified test crops + index.json
+├── models/decision/             ← exported logistic regression
+│   ├── decision_meta.json       ← coefficients, scaler, threshold, val/test metrics
+│   └── decision_features.parquet← audit of features/probabilities per split
 ├── app/
-│   ├── app.py                   ← Streamlit demo
+│   ├── app.py                   ← Streamlit demo (coordinator + per-agent trace)
 │   ├── data/demo_sessions.json  ← 5 real test sessions (normal, conceal, alibi, spree, false_alarm)
 │   └── trustcart/
-│       ├── config.py            ← paths + agent backend selection from .env
+│       ├── config.py            ← paths, agent backend/mode, per-agent model overrides
 │       ├── rnn.py               ← loads models/rnn, path_risk(), alert_threshold(), reliability()
-│       ├── cnn.py               ← STAND-IN: manual item entry. Teammate replaces items_seen()
-│       ├── decision.py          ← STAND-IN rule. Teammate implements _logistic_regression()
+│       ├── cnn.py               ← CNN inference (raw [0,255] RGB; preprocessing is in-graph)
+│       ├── decision.py          ← deterministic logistic regression (VALIDATED/ALERT)
 │       ├── visit.py             ← events → readable facts, theft cues, timeline (French)
-│       └── agent.py             ← ExplanationAgent: Gemini/Ollama + template fallback
+│       ├── agent.py             ← legacy single agent (compatibility shim)
+│       └── agents/              ← multi-agent layer
+│           ├── base.py          ← shared contracts + zero-crash LLM fallback
+│           ├── rnn_agent.py     ← PathReport
+│           ├── cnn_agent.py     ← CheckoutReport
+│           ├── decision_agent.py← DecisionReport
+│           ├── coordinator.py   ← orchestration, briefing, Q&A routing
+│           └── facts.py         ← allowed facts + fixed customer message
+├── scripts/
+│   ├── train_decision.py        ← zero-leakage logistic-regression training/export
+│   └── verify_agents.py         ← offline checks: scenarios, routing, fallbacks, CNN
 ├── outputs/rnn_v5/              ← last Kaggle run outputs (checkpoints, big files, gitignored)
 ├── context/                     ← README.md, models/ (modele_*.txt), use-case/ (scenario_*.txt): French explanations
 ├── .venv/                       ← Python 3.14 env with kaggle CLI + uv (tools only)
-└── .venv-app/                   ← Python 3.13 env for the app (TensorFlow needs ≤ 3.13)
+├── .venv-app/                   ← Python 3.13 env for the app (TensorFlow needs ≤ 3.13)
 ```
 
 ## 3. How to run things
@@ -125,14 +152,35 @@ Senior-standard grade given: **8.5/10**. Main limits: thefts are simulated; mode
 
 Open hypothesis (unverified): 75 % of false alarms have no theft cue; maybe because theft copies had LOOK events removed to keep lengths equal, so "few LOOKs" may look suspicious.
 
-## 5. TODO (in suggested order)
+## 5. Status and next steps
 
-1. **Add the Gemini key** in `.env`, test the assistant live in the app.
-2. **README.md** for teammates (how to run, where to plug models) + **git init / first GitHub commit**. Note: `.gitignore` ignores `models/`, `*.parquet`, `*.csv`; the app needs `models/rnn/` → allow it (e.g. replace `models/` by `models/*` then `!models/rnn/`, and allow `models/rnn/*.parquet|*.csv`) or share models separately.
-3. **CNN (teammate)**: implement `app/trustcart/cnn.py::items_seen()` returning `CheckoutView(item_ids, confidence, "cnn")`; set `AVAILABLE = True`. RPC images contain product classes, not Retailrocket item ids → a mapping table RPC class ↔ items (or ↔ aisle/price) is needed.
-4. **Logistic regression**: features defined in `decision.py::features()` (rnn_risk, items_picked_not_presented, cnn_confidence, cart_total, visit_duration_min). Train on `models/rnn/rnn_scores.parquet` (use calibrated `rnn_score`, respect the existing train/val/test split) + simulated CNN outputs; implement `_logistic_regression()`; set `LOGISTIC_REGRESSION_AVAILABLE = True`.
-5. Optional RNN improvements (→ 9/10): check the "few LOOKs" hypothesis; add an LSTM autoencoder trained on normal sessions to catch unseen theft types.
-6. Report: use the phase table above, the robustness results, and the architecture diagram.
+Completed:
+1. **CNN**: `app/trustcart/cnn.py` loads `models/cnn/cnn_model.keras`, classifies the 17 RPC
+   supercategories and returns a `CheckoutView` with mean confidence. It feeds raw RGB `[0, 255]`
+   because the exported Keras graph already contains `preprocess_input`. v2 (kaggle/cnn/cnn.ipynb,
+   kernel version 5): train/val/test accuracy 0.9946/0.9947/0.9942, temperature scaling baked in.
+2. **Logistic regression**: `scripts/train_decision.py` derives four features (rnn_risk, items_picked_not_presented, cart_total, visit_duration_min; no CNN-confidence proxy) from
+   `models/rnn/rnn_scores.parquet` + `outputs/rnn_v5/sessions_labeled.parquet`, fits on `train`,
+   selects the threshold on `val` (best F1), evaluates once on `test`, and exports
+   `models/decision/decision_meta.json`. `app/trustcart/decision.py` applies it exactly.
+3. **Multi-agent layer**: `app/trustcart/agents/` contains `RNNAgent`, `CNNAgent`, `DecisionAgent`
+   and `CoordinatorAgent`, with parallel orchestration, per-agent reports, staff briefing, Q&A routing
+   and offline French fallbacks. `app/app.py` displays the per-agent trace.
+
+Verification:
+```bash
+.venv-app/bin/python scripts/verify_agents.py   # offline: scenarios, routing, fallbacks, CNN, LR
+.venv-app/bin/streamlit run app/app.py
+```
+
+Next steps (optional):
+1. **Add the Gemini key** in `.env` and test the live narration (`AGENT_MODE=hybrid`).
+2. **RNN improvements** (→ 9/10): check the "few LOOKs" hypothesis; add an LSTM autoencoder trained on
+   normal sessions to catch unseen theft types.
+3. **CNN improvements**: the test accuracy is 59.1 % on 17 fine-grained retail categories; more crops
+   per class or a stronger backbone would help. The demo intentionally presents the CNN as a fallible
+   optical sensor, not a decision-maker.
+4. **Report**: use the phase table above, the RNN/CNN/LR metrics, and the multi-agent architecture diagram.
 
 ## 6. How the user likes to work
 - Explain step by step, phase by phase; they want to learn, not only get code.

@@ -1,6 +1,13 @@
 """Coordinator / Staff Liaison Agent.
 
-Orchestrates the three model agents, keeps the fixed neutral customer message, writes the staff
+LangGraph orchestrator over the three model agents (each one is itself a compiled LangGraph
+``infer/decide -> narrate`` graph). Two graphs:
+
+  * checkout: START -> visit -> (rnn_agent || cnn_agent) -> decision_agent -> briefing -> END
+  * Q&A:      START -> route -> Send(rnn_qa | cnn_qa | decision_qa)* -> synthesise -> END
+                              `-> coordinator_qa -> END
+
+It keeps the fixed neutral customer message, writes the staff
 briefing and routes staff questions to the right specialist. It never overrides a model decision:
 the ``DecisionReport`` produced by the logistic regression is final.
 
@@ -13,18 +20,35 @@ Modes (``AGENT_MODE``):
 """
 from __future__ import annotations
 
-from concurrent.futures import ThreadPoolExecutor
+import logging
+import operator
+import re
 from dataclasses import dataclass
+from typing import Annotated, TypedDict
+
+from langgraph.graph import END, START, StateGraph
+from langgraph.types import Send
 
 from .. import rnn
 from ..config import AgentSettings, agent_mode, agent_settings
 from ..decision import ALERT
-from ..visit import summarize
+from ..visit import VisitSummary, summarize
 from .base import AgentReply, BaseAgent, normalise
 from .cnn_agent import CNNAgent, CheckoutReport
 from .decision_agent import DecisionAgent, DecisionReport
 from .facts import CustomerMessage, customer_message
 from .rnn_agent import RNNAgent, PathReport
+
+LOGGER = logging.getLogger(__name__)
+
+ROUTER_PROMPT = """Tu es le routeur de TrustCart. Choisis quel(s) agent(s) doivent répondre à la question du
+personnel. Agents disponibles :
+- rnn : parcours du client en magasin, pauses, durée, vitesse, rayons, risque comportemental ;
+- cnn : produits posés en caisse, articles manquants, reconnaissance visuelle, montant du panier ;
+- decision : décision VALIDÉ/ALERTE, seuil, probabilité, raisons, poids des signaux, fiabilité de la décision ;
+- coordinator : conduite à tenir avec le client, salutations, questions générales ou hors sujet.
+Réponds UNIQUEMENT par un ou plusieurs noms parmi rnn, cnn, decision, coordinator, séparés par des
+virgules, sans autre texte. N'utilise coordinator que seul."""
 
 BRIEFING_REQUEST = ("Rédige le message affiché sur la tablette du personnel pour cette visite : trois phrases "
                     "au maximum, qui donnent la décision déjà prise, les principaux indices et, en cas "
@@ -86,6 +110,29 @@ class CheckoutResult:
         return self.decision.outcome == ALERT
 
 
+class OrchestratorState(TypedDict, total=False):
+    events: list[dict]
+    presented: list[int] | tuple[int, ...]
+    image_paths: list[str] | tuple[str, ...] | None
+    manual_categories: list[str] | tuple[str, ...] | None
+    camera: bool
+    swaps: dict[int, str] | None
+    visit: VisitSummary
+    path: PathReport
+    checkout: CheckoutReport
+    decision: DecisionReport
+    result: CheckoutResult
+
+
+class QAState(TypedDict, total=False):
+    question: str
+    result: CheckoutResult
+    history: list[dict]
+    routes: list[str]
+    replies: Annotated[list[tuple[int, AgentReply]], operator.add]   # (route order, reply)
+    answer: AgentReply
+
+
 class CoordinatorAgent(BaseAgent):
     name = "Coordinateur"
     role = "orchestrateur et liaison avec le personnel"
@@ -100,28 +147,66 @@ class CoordinatorAgent(BaseAgent):
         self.rnn_agent = RNNAgent(settings or agent_settings("rnn"), self.mode)
         self.cnn_agent = CNNAgent(settings or agent_settings("cnn"), self.mode)
         self.decision_agent = DecisionAgent(settings or agent_settings("decision"), self.mode)
+        self.checkout_graph = self._build_checkout_graph()
+        self.qa_graph = self._build_qa_graph()
 
     # ------------------------------------------------------------------ orchestration
 
+    def _build_checkout_graph(self):
+        builder = StateGraph(OrchestratorState)
+        builder.add_node("visit", self._visit_node)
+        builder.add_node("rnn_agent", self._rnn_node)
+        builder.add_node("cnn_agent", self._cnn_node)
+        builder.add_node("decision_agent", self._decision_node)
+        builder.add_node("briefing", self._briefing_node)
+        builder.add_edge(START, "visit")
+        builder.add_edge("visit", "rnn_agent")          # fan-out: both specialists run in parallel
+        builder.add_edge("visit", "cnn_agent")
+        builder.add_edge(["rnn_agent", "cnn_agent"], "decision_agent")   # join: waits for both
+        builder.add_edge("decision_agent", "briefing")
+        builder.add_edge("briefing", END)
+        return builder.compile(name="trustcart_checkout")
+
+    @staticmethod
+    def _visit_node(state: OrchestratorState) -> dict:
+        return {"visit": summarize(state["events"], rnn.cue_thresholds())}
+
+    def _rnn_node(self, state: OrchestratorState) -> dict:
+        return {"path": self.rnn_agent.analyze(state["events"], state["visit"])}
+
+    def _cnn_node(self, state: OrchestratorState) -> dict:
+        return {"checkout": self.cnn_agent.analyze(state["visit"], state["presented"],
+                                                   state.get("image_paths"),
+                                                   state.get("manual_categories"),
+                                                   camera=state.get("camera", True),
+                                                   swaps=state.get("swaps"))}
+
+    def _decision_node(self, state: OrchestratorState) -> dict:
+        return {"decision": self.decision_agent.evaluate(state["path"], state["checkout"],
+                                                         state["events"])}
+
+    def _briefing_node(self, state: OrchestratorState) -> dict:
+        path, checkout, decision = state["path"], state["checkout"], state["decision"]
+        customer = customer_message(decision.decision, decision.facts)
+        briefing = self._briefing(path, checkout, decision)
+        activities = self._activities(path, checkout, decision, briefing)
+        return {"result": CheckoutResult(path=path, checkout=checkout, decision=decision,
+                                         customer=customer, briefing=briefing,
+                                         activities=activities)}
+
     def run_checkout(self, events: list[dict], presented: list[int] | tuple[int, ...],
                      image_paths: list[str] | tuple[str, ...] | None = None,
-                     manual_categories: list[str] | tuple[str, ...] | None = None) -> CheckoutResult:
-        """Run the full deterministic pipeline, then let the Coordinator narrate it."""
-        visit = summarize(events, rnn.cue_thresholds())
+                     manual_categories: list[str] | tuple[str, ...] | None = None,
+                     camera: bool = True, swaps: dict[int, str] | None = None) -> CheckoutResult:
+        """Run the full deterministic pipeline, then let the Coordinator narrate it.
 
-        with ThreadPoolExecutor(max_workers=2, thread_name_prefix="trustcart-agent") as pool:
-            path_future = pool.submit(self.rnn_agent.analyze, events, visit)
-            checkout_future = pool.submit(self.cnn_agent.analyze, visit, presented,
-                                           image_paths, manual_categories)
-            path_report = path_future.result()
-            checkout_report = checkout_future.result()
-
-        decision_report = self.decision_agent.evaluate(path_report, checkout_report, events)
-        customer = customer_message(decision_report.decision, decision_report.facts)
-        briefing = self._briefing(path_report, checkout_report, decision_report)
-        activities = self._activities(path_report, checkout_report, decision_report, briefing)
-        return CheckoutResult(path=path_report, checkout=checkout_report, decision=decision_report,
-                              customer=customer, briefing=briefing, activities=activities)
+        ``presented`` are the items the customer places on the tray; with ``camera`` the CNN
+        confirms each one from its photo before the decision model sees the basket.
+        """
+        return self.checkout_graph.invoke({
+            "events": events, "presented": presented, "image_paths": image_paths,
+            "manual_categories": manual_categories, "camera": camera, "swaps": swaps,
+        })["result"]
 
     def _briefing(self, path: PathReport, checkout: CheckoutReport,
                   decision: DecisionReport) -> AgentReply:
@@ -146,6 +231,9 @@ class CoordinatorAgent(BaseAgent):
                 signals.append(facts["indices_dans_le_parcours"][0])
             if facts["articles_pris_non_presentes"]:
                 signals.append(f"{len(facts['articles_pris_non_presentes'])} article(s) pris non présenté(s)")
+            if facts.get("articles_declares_non_reconnus_par_la_camera"):
+                signals.append(f"{len(facts['articles_declares_non_reconnus_par_la_camera'])} "
+                               "article(s) déclaré(s) non confirmé(s) par la caméra")
             first = (f"Vérification recommandée : décision ALERTE, probabilité d'anomalie "
                      f"{probability} % (seuil {threshold} %). ")
             second = ("Signaux : " + " ; ".join(signals) + ". " if signals else
@@ -174,24 +262,81 @@ class CoordinatorAgent(BaseAgent):
             return ["coordinator"]
         return ["coordinator"]
 
+    def _build_qa_graph(self):
+        builder = StateGraph(QAState)
+        builder.add_node("route", self._route_node)
+        builder.add_node("coordinator_qa", self._coordinator_qa_node)
+        builder.add_node("rnn_qa", self._specialist_node("rnn"))
+        builder.add_node("cnn_qa", self._specialist_node("cnn"))
+        builder.add_node("decision_qa", self._specialist_node("decision"))
+        builder.add_node("synthesise", self._synthesise_node)
+        builder.add_edge(START, "route")
+        builder.add_conditional_edges("route", self._dispatch,
+                                      ["coordinator_qa", "rnn_qa", "cnn_qa", "decision_qa"])
+        for specialist in ("rnn_qa", "cnn_qa", "decision_qa"):
+            builder.add_edge(specialist, "synthesise")
+        builder.add_edge("coordinator_qa", END)
+        builder.add_edge("synthesise", END)
+        return builder.compile(name="trustcart_qa")
+
+    def llm_route(self, question: str) -> list[str] | None:
+        """Ask the LLM which specialists should answer; None when unavailable or invalid."""
+        if self._llm is None or self.mode == "templates":
+            return None
+        try:
+            raw = self._llm.invoke([{"role": "system", "content": ROUTER_PROMPT},
+                                    {"role": "user", "content": question}])
+        except Exception as exc:      # any LLM failure -> keyword router
+            LOGGER.warning("LLM router failed, using keywords: %s", type(exc).__name__)
+            return None
+        names = re.findall(r"[a-z]+", normalise(raw or ""))
+        valid = ("rnn", "cnn", "decision", "coordinator")
+        if not names or any(name not in valid for name in names):
+            LOGGER.warning("LLM router returned an invalid answer %r, using keywords", raw)
+            return None
+        routes = [name for name in ("rnn", "cnn", "decision") if name in names]
+        return routes or ["coordinator"]
+
+    def _route_node(self, state: QAState) -> dict:
+        """LLM routing first; deterministic keyword routing as the offline / invalid-answer fallback."""
+        routes = self.llm_route(state["question"])
+        return {"routes": routes if routes is not None else self.route(state["question"])}
+
+    @staticmethod
+    def _dispatch(state: QAState) -> list[Send] | str:
+        if state["routes"] == ["coordinator"]:
+            return "coordinator_qa"
+        return [Send(f"{route}_qa", {**state, "routes": [route], "replies": []})
+                for route in state["routes"]]
+
+    def _specialist_node(self, route: str):
+        agents = {"rnn": (self.rnn_agent, "path"), "cnn": (self.cnn_agent, "checkout"),
+                  "decision": (self.decision_agent, "decision")}
+
+        def node(state: QAState) -> dict:
+            agent, report_attr = agents[route]
+            reply = agent.answer(state["question"], getattr(state["result"], report_attr),
+                                 state.get("history", []))
+            return {"replies": [(list(ROUTE_KEYWORDS).index(route), reply)]}
+
+        node.__name__ = f"{route}_qa"
+        return node
+
+    def _coordinator_qa_node(self, state: QAState) -> dict:
+        return {"answer": self._coordinator_answer(state["question"], state["result"],
+                                                   state.get("history", []))}
+
+    def _synthesise_node(self, state: QAState) -> dict:
+        replies = [reply for _, reply in sorted(state["replies"], key=lambda item: item[0])]
+        if len(replies) == 1:
+            return {"answer": replies[0]}
+        return {"answer": self._synthesise(state["question"], state["result"], replies,
+                                           state.get("history", []))}
+
     def answer(self, question: str, result: CheckoutResult, history: list[dict]) -> AgentReply:
         """Route a staff question, answer with the specialist(s), and synthesise if needed."""
-        routes = self.route(question)
-        if routes == ["coordinator"]:
-            return self._coordinator_answer(question, result, history)
-
-        replies: list[AgentReply] = []
-        for route in routes:
-            if route == "rnn":
-                replies.append(self.rnn_agent.answer(question, result.path, history))
-            elif route == "cnn":
-                replies.append(self.cnn_agent.answer(question, result.checkout, history))
-            elif route == "decision":
-                replies.append(self.decision_agent.answer(question, result.decision, history))
-
-        if len(replies) == 1:
-            return replies[0]
-        return self._synthesise(question, result, replies, history)
+        return self.qa_graph.invoke({"question": question, "result": result,
+                                     "history": history, "replies": []})["answer"]
 
     def _coordinator_answer(self, question: str, result: CheckoutResult,
                             history: list[dict]) -> AgentReply:
@@ -251,7 +396,9 @@ class CoordinatorAgent(BaseAgent):
             AgentActivity(
                 agent=self.cnn_agent.name, role=self.cnn_agent.role, status=status(checkout.summary),
                 summary=checkout.summary.text, source=checkout.summary.source, note=checkout.summary.note,
-                metrics={"posés": checkout.presented_count, "non présentés": checkout.missing_count,
+                metrics={"déclarés": len(checkout.view.declared_ids),
+                         "confirmés CNN": checkout.presented_count,
+                         "non présentés": checkout.missing_count,
                          "panier": f"{checkout.cart_total:.2f} €",
                          "confiance": (f"{checkout.view.confidence:.0%}"
                                        if checkout.view.confidence is not None else "n/a")}),

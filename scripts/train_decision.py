@@ -9,13 +9,27 @@ Zero-leakage protocol
    class-weight variant; test -> final, untouched evaluation.
 3. The test split is never used for any choice.
 
-The checkout features mirror ``app/trustcart/decision.py:features`` exactly:
-    rnn_risk, items_picked_not_presented, cnn_confidence, cart_total, visit_duration_min
+The features are taken from ``app/trustcart/decision.py:features``:
+    rnn_risk, items_picked_not_presented, cart_total, visit_duration_min, items_rejected_by_cnn
 
-Because the RPC dataset has no per-session checkout photos, ``cnn_confidence`` is a deterministic,
-label-independent proxy derived from a hash of each presented item id. This is documented in the
-exported metadata and is replaced by the real CNN confidence at inference time when crops are
-available.
+Checkout-camera simulation (v3)
+-------------------------------
+At checkout the CNN photographs every declared item and confirms it or not
+(``app/trustcart/cnn.py:verify_basket``). The training sessions have no photos, so the camera is
+simulated, separately inside each split and with a fixed seed:
+  * honest camera noise: every paid item of every session is rejected with probability
+    ``1 - CNN test accuracy`` (the CNN's measured error rate);
+  * substitution fraud: a ``--substitution-rate`` fraction of honest sessions is cloned with
+    1 (80 %) or 2 (20 %) paid items swapped for another product. Label 1, pattern "substitution".
+    The RNN score of the clone is the original one: the path is honest, only the camera can see it.
+A rejected item is treated exactly as in the app: not presented, removed from the cart total.
+
+``cnn_confidence`` is deliberately NOT a feature. The RetailRocket sessions have no checkout photos,
+so a real CNN confidence cannot be computed for training; v1 used a label-independent hash proxy,
+which taught the model nothing (coefficient ~0.05) and created a train/inference mismatch once the
+real CNN (test accuracy 0.994, confidence ~1.0) was plugged in. The CNN's contribution to the
+decision is the list of items presented at checkout (-> items_picked_not_presented); its confidence
+is shown to staff, not used as a risk signal.
 
 Run with:
     .venv-app/bin/python scripts/train_decision.py
@@ -23,7 +37,6 @@ Run with:
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import sys
 from datetime import datetime, timezone
@@ -41,55 +54,81 @@ DEFAULT_SCORES = ROOT / "models" / "rnn" / "rnn_scores.parquet"
 DEFAULT_EVENTS = ROOT / "outputs" / "rnn_v5" / "sessions_labeled.parquet"
 DEFAULT_OUT = ROOT / "models" / "decision"
 
-FEATURES = ("rnn_risk", "items_picked_not_presented", "cnn_confidence", "cart_total",
-            "visit_duration_min")
+DEFAULT_CNN_META = ROOT / "models" / "cnn" / "cnn_meta.json"
+
+FEATURES = ("rnn_risk", "items_picked_not_presented", "cart_total", "visit_duration_min",
+            "items_rejected_by_cnn")
 FEATURE_LABELS_FR = {
     "rnn_risk": "risque du parcours (RNN)",
     "items_picked_not_presented": "articles pris non présentés",
-    "cnn_confidence": "confiance de la reconnaissance (CNN)",
     "cart_total": "montant du panier",
     "visit_duration_min": "durée de la visite",
+    "items_rejected_by_cnn": "articles non confirmés par la caméra (CNN)",
 }
+SUBSTITUTION_ID_OFFSET = 1_000_000_000
 SPLITS = ("train", "val", "test")
 
 
 # --------------------------------------------------------------------------- feature engineering
 
-def _proxy_cnn_confidence(item_id: int) -> float:
-    """Deterministic, label-independent confidence proxy in [0.55, 0.99].
-
-    The RPC pipeline does not export per-session checkout images, so a real CNN confidence cannot
-    be recomputed for the 33,218 historical sessions. Using the label here would leak the target;
-    a seeded item hash keeps the feature honest (it carries no theft information) and lets the
-    coefficient learn whether the signal is useful. At inference, the real CNN confidence is used.
-    """
-    digest = hashlib.sha256(f"trustcart-cnn-proxy:{int(item_id)}".encode()).digest()
-    uniform = int.from_bytes(digest[:8], "big") / 2 ** 64
-    return 0.55 + 0.44 * uniform
-
-
 def session_features(events: pd.DataFrame) -> pd.DataFrame:
-    """Derive the five decision features from raw session events, one row per session."""
+    """Derive the decision features from raw session events, one row per session."""
     rows = []
     for session_id, group in events.groupby("session_id", sort=False):
         picked = tuple(dict.fromkeys(group.loc[group["action"] == "PICK", "itemid"]))
         paid = tuple(group.loc[group["action"] == "PAY", "itemid"])
         price_by_item = group.drop_duplicates("itemid").set_index("itemid")["price"]
-        presented = set(paid)
+        presented = tuple(dict.fromkeys(paid))
+        picked_set = set(picked)
 
-        confidences = [_proxy_cnn_confidence(item) for item in presented]
         rows.append({
             "session_id": int(session_id),
-            "items_picked_not_presented": sum(1 for item in picked if item not in presented),
+            "items_picked_not_presented": sum(1 for item in picked if item not in set(presented)),
             "cart_total": float(sum(price_by_item.get(item, 0.0) for item in presented)),
             "visit_duration_min": float(group["dt_sec"].sum() / 60.0),
-            "cnn_confidence": float(np.mean(confidences)) if confidences else np.nan,
+            # (price, was picked in the aisles) of every declared item, for the camera simulation
+            "declared": [(float(price_by_item.get(item, 0.0)), item in picked_set) for item in presented],
         })
     return pd.DataFrame(rows)
 
 
-def build_dataset(scores_path: Path, events_path: Path) -> tuple[pd.DataFrame, float]:
-    scores = pd.read_parquet(scores_path, columns=["session_id", "label", "split", "rnn_score"])
+def _reject(row: dict, rejected: list[tuple[float, bool]]) -> dict:
+    """Apply camera rejections exactly as the app does: not presented, out of the cart total."""
+    row = dict(row)
+    row["items_rejected_by_cnn"] = len(rejected)
+    row["items_picked_not_presented"] += sum(1 for _, picked in rejected if picked)
+    row["cart_total"] = max(0.0, row["cart_total"] - sum(price for price, _ in rejected))
+    return row
+
+
+def simulate_camera(data: pd.DataFrame, cnn_error_rate: float, substitution_rate: float,
+                    seed: int = 42) -> pd.DataFrame:
+    """Honest camera noise on every session + substitution-fraud clones, split by split."""
+    rng = np.random.default_rng(seed)
+    out = []
+    for split in SPLITS:
+        part = data[data["split"] == split]
+        for row in part.to_dict("records"):
+            declared = row["declared"]
+            noisy = [item for item in declared if rng.random() < cnn_error_rate]
+            out.append(_reject({**row, "pattern_full": row["pattern"]}, noisy))
+
+        honest = part[(part["label"] == 0) & (part["declared"].map(len) > 0)]
+        clones = honest.sample(frac=substitution_rate, random_state=int(rng.integers(1 << 31)))
+        for row in clones.to_dict("records"):
+            declared = row["declared"]
+            k = min(len(declared), 2 if rng.random() < 0.2 else 1)
+            swapped = [declared[i] for i in rng.choice(len(declared), size=k, replace=False)]
+            clone = _reject({**row, "pattern_full": "substitution"}, swapped)
+            clone.update(session_id=SUBSTITUTION_ID_OFFSET + int(row["session_id"]), label=1)
+            out.append(clone)
+    return pd.DataFrame(out)
+
+
+def build_dataset(scores_path: Path, events_path: Path, cnn_meta_path: Path,
+                  substitution_rate: float) -> pd.DataFrame:
+    scores = pd.read_parquet(scores_path, columns=["session_id", "label", "split", "pattern",
+                                                   "rnn_score"])
     events = pd.read_parquet(events_path, columns=["session_id", "action", "itemid", "price", "dt_sec"])
 
     features = session_features(events)
@@ -101,15 +140,15 @@ def build_dataset(scores_path: Path, events_path: Path) -> tuple[pd.DataFrame, f
     if unknown_splits:
         raise ValueError(f"Unexpected split values: {unknown_splits}")
 
-    # The CNN confidence is only missing for sessions where nothing was paid/presented. Impute with
-    # the training median, stored in the metadata and reused at inference when no crop is supplied.
-    fill = float(data.loc[data["split"] == "train", "cnn_confidence"].median())
-    data["cnn_confidence"] = data["cnn_confidence"].fillna(fill)
     data["rnn_risk"] = data["rnn_score"].astype(float)
+    cnn_error_rate = 1.0 - float(json.loads(cnn_meta_path.read_text())["test_metrics"]["accuracy"])
+    data = simulate_camera(data, cnn_error_rate, substitution_rate)
+    data.attrs["cnn_error_rate"] = cnn_error_rate
+    data.attrs["substitution_rate"] = substitution_rate
 
     if data[list(FEATURES)].isna().any().any():
         raise ValueError("Feature matrix still contains NaN values")
-    return data, fill
+    return data
 
 
 # --------------------------------------------------------------------------- metrics & threshold
@@ -159,7 +198,7 @@ def evaluate(y_true: np.ndarray, probabilities: np.ndarray, threshold: float) ->
 
 # --------------------------------------------------------------------------- training
 
-def train(data: pd.DataFrame, fill: float, out_dir: Path) -> dict:
+def train(data: pd.DataFrame, out_dir: Path) -> dict:
     train_df = data[data["split"] == "train"]
     val_df = data[data["split"] == "val"]
     test_df = data[data["split"] == "test"]
@@ -199,10 +238,19 @@ def train(data: pd.DataFrame, fill: float, out_dir: Path) -> dict:
     test_probabilities = model.predict_proba(x_test)[:, 1]
     val_metrics = evaluate(y_val, val_probabilities, threshold)
     test_metrics = evaluate(y_test, test_probabilities, threshold)
+    alerts = test_probabilities >= threshold
+    patterns = test_df["pattern_full"].fillna("none").to_numpy()
+    test_metrics["recall_by_pattern"] = {
+        str(name): float(alerts[(patterns == name) & (y_test == 1)].mean())
+        for name in sorted(set(patterns[y_test == 1]))
+    }
+    original = test_df["session_id"].to_numpy() < SUBSTITUTION_ID_OFFSET
+    test_metrics["without_substitution_clones"] = evaluate(
+        y_test[original], test_probabilities[original], threshold)
 
     metadata = {
         "model": "logistic_regression",
-        "artifact_version": 1,
+        "artifact_version": 3,
         "created_at_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "features": list(FEATURES),
         "feature_labels_fr": FEATURE_LABELS_FR,
@@ -219,7 +267,6 @@ def train(data: pd.DataFrame, fill: float, out_dir: Path) -> dict:
             "tie_break": "rappel, puis proximité de 0,5",
             "candidates": 197 + len(val_probabilities),
         },
-        "cnn_confidence_fill": float(fill),
         "training": {
             "class_weight": best["class_weight"],
             "solver": "lbfgs",
@@ -241,10 +288,17 @@ def train(data: pd.DataFrame, fill: float, out_dir: Path) -> dict:
             "label_column": "label",
             "split_column": "split",
             "presented_items": "unique PAY item ids (same default as the demo app)",
+            "camera_simulation": {
+                "cnn_error_rate": data.attrs["cnn_error_rate"],
+                "substitution_rate": data.attrs["substitution_rate"],
+                "substitution_items": "1 (80 %) or 2 (20 %) declared items swapped",
+                "seed": 42,
+                "note": ("simulated per split: honest rows get CNN-noise rejections, substitution "
+                         "clones of honest sessions are labelled 1 and keep their RNN score"),
+            },
             "cnn_confidence": (
-                "deterministic label-independent item-hash proxy in [0.55, 0.99]; the RPC dataset "
-                "does not provide per-session checkout images. At inference, the real CNN "
-                "confidence is used when crops are supplied, otherwise cnn_confidence_fill."
+                "not a feature: no checkout photos exist for the training sessions, so it cannot "
+                "be learned honestly. The CNN feeds the decision through the presented items."
             ),
         },
     }
@@ -253,7 +307,7 @@ def train(data: pd.DataFrame, fill: float, out_dir: Path) -> dict:
     with open(out_dir / "decision_meta.json", "w") as f:
         json.dump(metadata, f, ensure_ascii=False, indent=2)
 
-    audit = data[["session_id", "split", "label", *FEATURES]].copy()
+    audit = data[["session_id", "split", "label", "pattern_full", *FEATURES]].copy()
     audit["probability"] = np.nan
     audit.loc[audit["split"] == "train", "probability"] = model.predict_proba(x_train)[:, 1]
     audit.loc[audit["split"] == "val", "probability"] = val_probabilities
@@ -269,6 +323,9 @@ def main() -> int:
     parser.add_argument("--scores", type=Path, default=DEFAULT_SCORES)
     parser.add_argument("--events", type=Path, default=DEFAULT_EVENTS)
     parser.add_argument("--out-dir", type=Path, default=DEFAULT_OUT)
+    parser.add_argument("--cnn-meta", type=Path, default=DEFAULT_CNN_META)
+    parser.add_argument("--substitution-rate", type=float, default=0.05,
+                        help="fraction of honest sessions cloned as substitution fraud, per split")
     args = parser.parse_args()
 
     if not args.scores.is_file():
@@ -278,8 +335,8 @@ def main() -> int:
         print(f"Missing events file: {args.events}", file=sys.stderr)
         return 1
 
-    data, fill = build_dataset(args.scores, args.events)
-    metadata = train(data, fill, args.out_dir)
+    data = build_dataset(args.scores, args.events, args.cnn_meta, args.substitution_rate)
+    metadata = train(data, args.out_dir)
 
     print("Decision model trained — zero-leakage protocol respected")
     print(f"  features      : {', '.join(metadata['features'])}")
@@ -293,6 +350,13 @@ def main() -> int:
           f"precision={metadata['test']['precision']:.4f}  "
           f"recall={metadata['test']['recall']:.4f}  "
           f"false alarms={metadata['test']['false_alarm_rate']:.2%}")
+    print(f"  coefficients  : " + ", ".join(
+        f"{name}={coef:+.3f}" for name, coef in zip(metadata["features"], metadata["coefficients"])))
+    print(f"  test recall by pattern: " + ", ".join(
+        f"{name} {value:.0%}" for name, value in metadata["test"]["recall_by_pattern"].items()))
+    base = metadata["test"]["without_substitution_clones"]
+    print(f"  test without clones: F1={base['f1']:.4f} recall={base['recall']:.4f} "
+          f"false alarms={base['false_alarm_rate']:.2%}")
     print(f"  metadata      : {args.out_dir / 'decision_meta.json'}")
     print(f"  audit parquet : {args.out_dir / 'decision_features.parquet'}")
     return 0
