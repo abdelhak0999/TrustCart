@@ -50,8 +50,8 @@ flowchart LR
 
 ```bash
 # Cloner le dépôt
-git clone <URL_DU_REPO>
-cd Projet
+git clone https://github.com/abdelhak0999/TrustCart.git
+cd TrustCart
 
 # Créer l'environnement virtuel avec Python 3.13
 uv venv --python 3.13 .venv-app
@@ -102,8 +102,11 @@ L'interface est accessible sur [http://localhost:8501](http://localhost:8501).
   2. `items_picked_not_presented` : articles pris en rayon mais absents de la caisse.
   3. `cart_total` : valeur des articles présentés.
   4. `visit_duration_min` : durée de la visite.
-  - `cnn_confidence` n'est **pas** une feature : aucune photo de caisse n'existe pour les sessions d'entraînement, la confiance réelle du CNN ne peut donc pas être apprise honnêtement. Le CNN agit sur la décision via les articles présentés ; sa confiance est affichée au personnel.
+  5. `items_rejected_by_cnn` : articles déclarés que le CNN n'a pas confirmés sur la photo de caisse (fraude par substitution). Vaut 0 en mode manuel (sans caméra).
+  - **Simulation de la caméra (v3)** : les sessions d'entraînement n'ont pas de photos de caisse. La caméra est donc simulée dans chaque split (graine fixe) : bruit honnête au taux d'erreur mesuré du CNN (0,58 %), et 5 % des sessions honnêtes clonées avec 1 ou 2 articles substitués (label 1, motif `substitution`).
+  - `cnn_confidence` n'est **pas** une feature : aucune photo de caisse n'existe pour les sessions d'entraînement, la confiance réelle du CNN ne peut donc pas être apprise honnêtement. Le CNN agit sur la décision via les articles présentés et les articles rejetés ; sa confiance est affichée au personnel.
 - **Protocole zéro fuite** : `scripts/train_decision.py` ajuste le scaler et le modèle sur `train`, choisit le seuil d'alerte sur `val` (meilleur F1), puis évalue une seule fois sur `test`. Les métriques et coefficients sont exportés dans `models/decision/decision_meta.json`.
+- **Reproductibilité** : le ré-entraînement nécessite `outputs/rnn_v5/sessions_labeled.parquet`, produit par le notebook RNN (`notebooks/rnn.ipynb`) et non versionné (trop volumineux). L'application et les scripts de vérification n'en ont pas besoin : ils utilisent uniquement les artefacts de `models/`.
 - **Inférence** : `app/trustcart/decision.py::_logistic_regression()` applique exactement les mêmes coefficients, le même scaler et le même seuil ; `LOGISTIC_REGRESSION_AVAILABLE = True`.
 
 ### C. Agents explicatifs (multi-agents) — ✅ intégrés
@@ -123,7 +126,6 @@ L'interface est accessible sur [http://localhost:8501](http://localhost:8501).
 ```
 Projet/
 ├── README.md                  ← Ce document
-├── HANDOVER.md                ← Carnet d'état complet, métriques et historique
 ├── requirements.txt           ← Dépendances de l'application (Python 3.13)
 ├── .env.example               ← Modèle des variables d'environnement
 ├── .gitignore                 ← Configuration Git (exclut les secrets et données lourdes)
@@ -162,11 +164,17 @@ Projet/
 │
 ├── scripts/                   ← Outils reproductibles
 │   ├── train_decision.py      ← Entraînement zéro fuite de la régression logistique
-│   └── verify_agents.py       ← Vérification hors ligne des agents, du routage et du fallback
+│   ├── verify_agents.py       ← Vérification hors ligne des agents, du routage et du fallback
+│   ├── check_generalization.py← Métriques train / val / test des 3 modèles (surapprentissage)
+│   ├── simulate_case.py       ← Simulation d'un passage en caisse (normal / vol) en ligne de commande
+│   └── run_all_checks.sh      ← Lance toutes les vérifications
 │
 ├── notebooks/                 ← Expérimentations Jupyter / Kaggle
 │   ├── rnn.ipynb              ← Pipeline complet du RNN (80 cellules, phases 0 à 14)
-│   └── cnn.ipynb              ← Notebook réservé au modèle de vision
+│   ├── cnn.ipynb              ← CNN v2 (MobileNetV2, anti-surapprentissage)
+│   └── cnn_v1/                ← Première version du CNN (notebook, modèle, classes), conservée pour l'historique
+│
+├── kaggle/                    ← Notebooks et métadonnées des kernels Kaggle (rnn/, cnn/)
 │
 └── context/                   ← Documentation métier et fiches de présentation
 ```
@@ -191,13 +199,17 @@ Projet/
 - **Figures** : `models/cnn/courbes_apprentissage_cnn.png`, `models/cnn/matrice_confusion_cnn.png`.
 
 ### Régression logistique — décision finale
-- **Protocole** : fit sur `train` (23 252 sessions), seuil choisi sur `val` (4 983), évaluation unique
-  sur `test` (4 983).
-- **Features** : `rnn_risk`, `items_picked_not_presented`, `cart_total`, `visit_duration_min`.
-- **Seuil d'alerte** : `0.5046` (meilleur F1 sur validation).
-- **Validation** : F1 `0.9099`, PR-AUC `0.9579`.
-- **Test** : F1 `0.8947`, PR-AUC `0.9626`, ROC-AUC `0.9958`, précision `92.9 %`, rappel `86.3 %`,
-  fausses alertes `0.66 %`. Train / val / test très proches → pas de surapprentissage.
+- **Protocole** : fit sur `train` (23 643 sessions, dont les clones de substitution), seuil choisi sur
+  `val` (5 069), évaluation unique sur `test` (5 069).
+- **Features** : `rnn_risk`, `items_picked_not_presented`, `cart_total`, `visit_duration_min`,
+  `items_rejected_by_cnn`.
+- **Seuil d'alerte** : `0.5` (meilleur F1 sur validation).
+- **Validation** : F1 `0.9077`, PR-AUC `0.9441`, ROC-AUC `0.9944`.
+- **Test** : F1 `0.8960`, PR-AUC `0.9372`, ROC-AUC `0.9944`, précision `90.5 %`, rappel `88.7 %`,
+  fausses alertes `1.10 %`. Train / val / test très proches (F1 `0.904` / `0.908` / `0.896`) → pas de
+  surapprentissage.
+- **Rappel par type de fraude (test)** : alibi `93.6 %`, dissimulation `82.1 %`, rafle `83.3 %`,
+  substitution `100 %`. Sans les clones de substitution : F1 `0.876`, précision `88.7 %`, rappel `86.5 %`.
 - **Transparence** : la v1 utilisait un proxy de confiance CNN (hash des articles, sans lien avec le
-  label) : coefficient ≈ 0.05, et décalage avec la vraie confiance du CNN en inférence. Il a été retiré ;
-  les performances sont inchangées (F1 test 0.896 → 0.895).
+  label) : coefficient ≈ 0.05, et décalage avec la vraie confiance du CNN en inférence. Il a été retiré
+  et remplacé (v3) par `items_rejected_by_cnn`, qui correspond exactement à ce que fait l'application.
