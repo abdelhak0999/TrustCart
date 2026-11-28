@@ -41,6 +41,7 @@ Faits sur la caisse (JSON) :
 
 @dataclass(frozen=True)
 class CheckoutReport:
+    """Output of the CNN Agent: items confirmed or rejected by the camera, missing items, total."""
     view: CheckoutView
     presented_labels: tuple[str, ...]
     missing_labels: tuple[str, ...]
@@ -74,6 +75,7 @@ class CheckoutState(TypedDict, total=False):
 
 
 class CNNAgent(BaseAgent):
+    """CNN Agent: runs the camera check at checkout and explains what was seen or rejected."""
     name = "Agent CNN"
     role = "spécialiste de la reconnaissance des produits en caisse"
     system_prompt = SYSTEM_PROMPT
@@ -153,6 +155,7 @@ class CNNAgent(BaseAgent):
     def facts_from(view: CheckoutView, presented_labels: tuple[str, ...],
                    missing_labels: tuple[str, ...], cart_total: float, vision_status: str,
                    rejected_labels: tuple[str, ...] = ()) -> dict:
+        """Facts the CNN Agent is allowed to talk about (built only from the CNN outputs)."""
         return {
             "articles_poses_en_caisse": list(presented_labels),
             "articles_declares_non_reconnus_par_la_camera": list(rejected_labels),
@@ -206,6 +209,7 @@ class CNNAgent(BaseAgent):
                 f"{facts['etat_de_la_vision']}.")
 
     def answer(self, question: str, report: CheckoutReport, history: list[dict]) -> AgentReply:
+        """Answer a staff question about the items, the photos or the camera."""
         facts = self.facts_from(report.view, report.presented_labels, report.missing_labels,
                                 report.cart_total, report.vision_status, report.rejected_labels)
         return super().answer(question, facts, self._template_answer(question, facts), history)

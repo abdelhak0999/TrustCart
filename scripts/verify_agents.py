@@ -39,6 +39,7 @@ FAILURES: list[str] = []
 
 
 def check(condition: bool, message: str) -> None:
+    """Print one check result and remember failures."""
     print(("  ✅ " if condition else "  ❌ ") + message)
     if not condition:
         FAILURES.append(message)
@@ -51,14 +52,17 @@ class FailingLLM:
         self.error = error
 
     def invoke(self, _messages):
+        """Fake LLM call."""
         raise self.error
 
 
 def failing_llm(error: Exception) -> FailingLLM:
+    """A fake language model that always raises ``error`` (to test the template fallback)."""
     return FailingLLM(error)
 
 
 def http_errors() -> dict[str, Exception]:
+    """Typical API errors (quota, refused key, network) used to test the fallback."""
     request = httpx2.Request("POST", "https://example.invalid/v1/chat/completions")
     response = httpx2.Response(429, request=request)
     return {
@@ -69,10 +73,12 @@ def http_errors() -> dict[str, Exception]:
 
 
 def sentence_count(text: str) -> int:
+    """Number of sentences in a text (the staff briefing must stay short)."""
     return len(re.findall(r"[.!?](?:\s|$)", text))
 
 
 def main() -> int:
+    """Run every offline check and return a non-zero exit code on failure."""
     print("1. Demo scenarios (templates, zero network)")
     sessions = json.load(open(ROOT / "app" / "data" / "demo_sessions.json"))
     coordinator = CoordinatorAgent(agent_settings("coordinator"), mode="templates")
@@ -223,10 +229,12 @@ def main() -> int:
     print("\n6. LLM router (LangGraph Q&A) with keyword fallback")
 
     class ScriptedLLM:
+        """A fake language model that always returns the same answer."""
         def __init__(self, answer):
             self.answer = answer
 
         def invoke(self, _messages):
+            """Fake LLM call."""
             return self.answer
 
     router = CoordinatorAgent(settings, mode="hybrid")

@@ -53,4 +53,5 @@ class SessionScorer:
         return float(1 / (1 + np.exp(-(self.cal_a * np.log(p / (1 - p)) + self.cal_b))))
 
     def is_anomaly(self, actions, aisles, dt_sec, price):
+        """True when the calibrated risk of the session reaches the alert threshold."""
         return self.score(actions, aisles, dt_sec, price) >= self.threshold

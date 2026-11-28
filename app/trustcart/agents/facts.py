@@ -14,6 +14,7 @@ from ..visit import VisitSummary, timeline
 
 @dataclass(frozen=True)
 class CustomerMessage:
+    """Fixed, neutral message shown on the customer screen."""
     title: str
     body: str
 

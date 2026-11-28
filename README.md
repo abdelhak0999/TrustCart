@@ -301,7 +301,6 @@ TrustCart/
 │       ├── rnn.py              Inférence du RNN
 │       ├── cnn.py              Inférence du CNN et vérification du panier
 │       ├── decision.py         Régression logistique (VALIDÉ / ALERTE)
-│       ├── agent.py            Ancien agent unique (conservé pour compatibilité)
 │       └── agents/             Architecture multi-agents (voir §5)
 │
 ├── models/

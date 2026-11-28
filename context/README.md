@@ -8,7 +8,11 @@ TrustCart is a frictionless self-checkout system that follows each shopper from 
 
 ▎
 
-▎ Honest customers pay and leave in about 10 seconds, and suspicious cases are flagged with an explainable decision.\
-\
-Full given context:\
-![](image.jpeg)
+▎ Honest customers pay and leave in about 10 seconds, and suspicious cases are flagged with an explainable decision.
+
+## Énoncé (Projet 20 : Plateforme de Caisse Autonome sans Friction — Smart Retail)
+
+- **Dataset :** Retail Product Recognition + Customer Shopping Sequence (Kaggle).
+- **Objectif :** valider automatiquement le panier client et détecter les anomalies de passage en caisse.
+- **Techniques :** CNN (reconnaissance optique des articles déposés), RNN (suivi de la cohérence séquentielle du parcours client), Régression Logistique (validation du paiement ou appel d'un agent de sécurité).
+- **Livrables :** rapport technique, code source documenté, démonstration.

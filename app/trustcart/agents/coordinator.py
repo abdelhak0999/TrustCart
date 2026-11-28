@@ -83,6 +83,7 @@ def _normalise(text: str) -> str:
 
 @dataclass(frozen=True)
 class AgentActivity:
+    """One line of the agent trace shown to staff (who did what, with which backend)."""
     agent: str
     role: str
     status: str                 # "ok", "fallback" or "offline"
@@ -94,6 +95,7 @@ class AgentActivity:
 
 @dataclass(frozen=True)
 class CheckoutResult:
+    """Everything produced by one checkout: the three reports, customer message and briefing."""
     path: PathReport
     checkout: CheckoutReport
     decision: DecisionReport
@@ -103,14 +105,17 @@ class CheckoutResult:
 
     @property
     def outcome(self) -> str:
+        """VALIDATED or ALERT, as decided by the logistic regression."""
         return self.decision.outcome
 
     @property
     def is_alert(self) -> bool:
+        """True when the visit must be checked by staff."""
         return self.decision.outcome == ALERT
 
 
 class OrchestratorState(TypedDict, total=False):
+    """LangGraph state of the checkout graph (inputs, then each agent's report)."""
     events: list[dict]
     presented: list[int] | tuple[int, ...]
     image_paths: list[str] | tuple[str, ...] | None
@@ -125,6 +130,7 @@ class OrchestratorState(TypedDict, total=False):
 
 
 class QAState(TypedDict, total=False):
+    """LangGraph state of the staff Q&A graph (question, chosen routes, specialist replies)."""
     question: str
     result: CheckoutResult
     history: list[dict]
@@ -134,6 +140,7 @@ class QAState(TypedDict, total=False):
 
 
 class CoordinatorAgent(BaseAgent):
+    """Coordinator: orchestrates the three agents, writes the staff briefing and routes questions."""
     name = "Coordinateur"
     role = "orchestrateur et liaison avec le personnel"
     system_prompt = SYSTEM_PROMPT
@@ -314,6 +321,7 @@ class CoordinatorAgent(BaseAgent):
                   "decision": (self.decision_agent, "decision")}
 
         def node(state: QAState) -> dict:
+            """Ask one specialist agent and tag its reply with the route order."""
             agent, report_attr = agents[route]
             reply = agent.answer(state["question"], getattr(state["result"], report_attr),
                                  state.get("history", []))
@@ -383,6 +391,7 @@ class CoordinatorAgent(BaseAgent):
     def _activities(self, path: PathReport, checkout: CheckoutReport,
                     decision: DecisionReport, briefing: AgentReply) -> tuple[AgentActivity, ...]:
         def status(reply: AgentReply) -> str:
+            """Trace status of a reply: ok (LLM), fallback (LLM failed) or offline (templates)."""
             if reply.note:
                 return "fallback"
             return "offline" if reply.source.startswith("Réponses") else "ok"

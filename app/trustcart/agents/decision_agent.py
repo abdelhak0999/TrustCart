@@ -36,6 +36,7 @@ Faits sur la décision (JSON) :
 
 @dataclass(frozen=True)
 class DecisionReport:
+    """Output of the Decision Agent: the final decision, its five features and the allowed facts."""
     decision: Decision
     features: dict
     facts: dict
@@ -44,10 +45,12 @@ class DecisionReport:
 
     @property
     def outcome(self) -> str:
+        """VALIDATED or ALERT."""
         return self.decision.outcome
 
     @property
     def is_alert(self) -> bool:
+        """True when the visit must be checked by staff."""
         return self.decision.outcome == ALERT
 
 
@@ -63,6 +66,11 @@ class DecisionState(TypedDict, total=False):
 
 
 class DecisionAgent(BaseAgent):
+    """Decision Agent: applies the logistic regression and explains which factors drove it.
+
+    It is the only agent that produces VALIDATED / ALERT, and the decision comes from the
+    deterministic model, never from the language model.
+    """
     name = "Agent Décision"
     role = "spécialiste de la fusion des signaux et de la règle d'alerte"
     system_prompt = SYSTEM_PROMPT
@@ -158,5 +166,6 @@ class DecisionAgent(BaseAgent):
                 f"{facts.get('seuil_decision_pourcent')} %. {facts['raison_de_la_decision']}")
 
     def answer(self, question: str, report: DecisionReport, history: list[dict]) -> AgentReply:
+        """Answer a staff question about the decision, threshold or reliability."""
         return super().answer(question, report.facts, self._template_answer(question, report.facts),
                               history)

@@ -23,6 +23,7 @@ AGENT_MODES = ("hybrid", "full_llm", "templates")
 
 @dataclass(frozen=True)
 class AgentSettings:
+    """Language-model backend chosen for one agent (Gemini, Ollama or offline templates)."""
     backend: str            # "gemini", "ollama" or "templates"
     model: str
     base_url: str | None

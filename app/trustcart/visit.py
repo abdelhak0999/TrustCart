@@ -6,18 +6,21 @@ ACTION_LABELS = {"LOOK": "Regarde", "PICK": "Prend", "PAY": "Paie"}
 
 @dataclass(frozen=True)
 class Item:
+    """One store item touched during the visit (id, aisle, price)."""
     item_id: int
     aisle: int
     price: float
 
     @property
     def label(self) -> str:
+        """French label shown to staff, e.g. ``Article 42 (rayon 3, 9.90 €)``."""
         aisle = f"rayon {self.aisle}" if self.aisle else "rayon inconnu"
         return f"Article {self.item_id} ({aisle}, {self.price:.2f} €)"
 
 
 @dataclass(frozen=True)
 class VisitSummary:
+    """Readable summary of a visit: items picked and paid, duration, longest pause, theft cues."""
     items: dict[int, Item]          # every item touched, by id
     picked: tuple[int, ...]         # items put in the basket, in order, without duplicates
     paid: tuple[int, ...]           # one entry per payment line
@@ -27,6 +30,7 @@ class VisitSummary:
 
 
 def format_duration(seconds: float) -> str:
+    """Format a duration in seconds as French text, e.g. ``2 min 05 s``."""
     seconds = int(round(seconds))
     if seconds < 60:
         return f"{seconds} s"
@@ -60,6 +64,7 @@ def _theft_cues(events: list[dict], thresholds: dict) -> list[str]:
 
 
 def summarize(events: list[dict], thresholds: dict) -> VisitSummary:
+    """Build the ``VisitSummary`` of a visit from its raw LOOK / PICK / PAY events."""
     items = {e["itemid"]: Item(e["itemid"], e["aisle"], e["price"]) for e in events}
     picked = tuple(dict.fromkeys(e["itemid"] for e in events if e["action"] == "PICK"))
     paid = tuple(e["itemid"] for e in events if e["action"] == "PAY")

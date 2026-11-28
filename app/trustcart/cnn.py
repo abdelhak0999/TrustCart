@@ -49,6 +49,7 @@ class Prediction:
 
 @dataclass(frozen=True)
 class CheckoutView:
+    """What the checkout saw: declared items, CNN-verified items, rejected items and confidence."""
     item_ids: tuple[int, ...]          # items placed at checkout (basket ids, used by the decision)
     confidence: float | None           # mean recognition confidence; None for manual entry
     source: str                        # "cnn" or "manual"
@@ -60,6 +61,7 @@ class CheckoutView:
 
 @lru_cache(maxsize=1)
 def metadata() -> dict:
+    """Training metadata of the CNN (17 supercategories, image size, test metrics)."""
     with open(CNN_DIR / "cnn_meta.json") as f:
         return json.load(f)
 

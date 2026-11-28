@@ -31,12 +31,14 @@ CATEGORY_LABELS = {
 
 @st.cache_resource
 def load_models():
+    """Warm the RNN and build the coordinator once per Streamlit server (cached)."""
     rnn.load_scorer()                     # warm the RNN once per server
     return CoordinatorAgent()             # orchestrates RNN, CNN and decision agents
 
 
 @st.cache_data
 def load_demo_sessions() -> dict:
+    """The five demo sessions from the test split, indexed by scenario kind."""
     with open(DEMO_SESSIONS_PATH) as f:
         return {s["kind"]: s for s in json.load(f)}
 

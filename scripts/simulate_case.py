@@ -16,6 +16,7 @@ from trustcart.visit import summarize  # noqa: E402
 
 
 def main() -> int:
+    """Run one demo scenario from the command line and print each step."""
     parser = argparse.ArgumentParser(description="Simulate a TrustCart checkout scenario.")
     parser.add_argument("kind", choices=["normal", "conceal", "alibi", "spree", "false_alarm"],
                         help="Demo scenario to run.")

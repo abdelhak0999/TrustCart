@@ -25,6 +25,7 @@ LOGISTIC_REGRESSION_AVAILABLE = True
 
 @dataclass(frozen=True)
 class Decision:
+    """Final checkout decision with its probability, threshold and a one-sentence reason."""
     outcome: str                     # VALIDATED or ALERT
     source: str                      # "logistic_regression" or "provisional_rule"
     reason: str                      # one sentence, in French
@@ -117,6 +118,11 @@ def _logistic_regression(inputs: dict) -> Decision:
 
 
 def decide(path_risk: float, threshold: float, visit: VisitSummary, checkout: CheckoutView) -> Decision:
+    """Return the final decision for a visit.
+
+    Uses the trained logistic regression; the provisional rule on the RNN risk alone is only
+    kept as a fallback if the regression artefacts are missing.
+    """
     if LOGISTIC_REGRESSION_AVAILABLE:
         return _logistic_regression(features(path_risk, visit, checkout))
     if path_risk >= threshold:

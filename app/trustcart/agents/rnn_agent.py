@@ -33,6 +33,7 @@ Faits sur le parcours (JSON) :
 
 @dataclass(frozen=True)
 class PathReport:
+    """Output of the RNN Agent: path risk, threshold, theft cues, timeline and summary."""
     risk: float
     threshold: float
     reliability: dict
@@ -57,6 +58,7 @@ class PathState(TypedDict, total=False):
 
 
 class RNNAgent(BaseAgent):
+    """RNN Agent: scores the customer path with the LSTM and explains it (pauses, pace, cues)."""
     name = "Agent RNN"
     role = "spécialiste du parcours et du risque comportemental"
     system_prompt = SYSTEM_PROMPT
@@ -103,6 +105,7 @@ class RNNAgent(BaseAgent):
     @staticmethod
     def facts_from(risk: float, threshold: float, reliability: dict, visit: VisitSummary,
                    lines: tuple[str, ...]) -> dict:
+        """Facts the RNN Agent is allowed to talk about (built only from the RNN outputs)."""
         return {
             "risque_du_parcours_pourcent": round(risk * 100),
             "seuil_alerte_pourcent": round(threshold * 100),
@@ -150,6 +153,7 @@ class RNNAgent(BaseAgent):
                    "Aucun indice simple, c'est l'enchaînement des actions qui compte."))
 
     def answer(self, question: str, report: PathReport, history: list[dict]) -> AgentReply:
+        """Answer a staff question about the path, pauses or the model reliability."""
         facts = self.facts_from(report.risk, report.threshold, report.reliability, report.visit,
                                 report.timeline)
         return super().answer(question, facts, self._template_answer(question, facts), history)

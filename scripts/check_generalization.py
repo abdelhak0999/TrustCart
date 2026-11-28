@@ -19,12 +19,14 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def metrics(y: np.ndarray, p: np.ndarray, threshold: float) -> str:
+    """ROC-AUC, PR-AUC and F1 of one split, as a single line."""
     pred = p >= threshold
     return (f"n={len(y):6d}  ROC-AUC={roc_auc_score(y, p):.4f}  PR-AUC={average_precision_score(y, p):.4f}  "
             f"F1={f1_score(y, pred, zero_division=0):.4f}")
 
 
 def main() -> int:
+    """Print train / val / test metrics of the RNN and the decision model."""
     rnn_meta = json.loads((ROOT / "models/rnn/rnn_meta.json").read_text())
     scores = pd.read_parquet(ROOT / "models/rnn/rnn_scores.parquet")
     print("RNN columns:", list(scores.columns))

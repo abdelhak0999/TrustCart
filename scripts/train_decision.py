@@ -127,6 +127,10 @@ def simulate_camera(data: pd.DataFrame, cnn_error_rate: float, substitution_rate
 
 def build_dataset(scores_path: Path, events_path: Path, cnn_meta_path: Path,
                   substitution_rate: float) -> pd.DataFrame:
+    """One row per session with the five decision features, the label and the official split.
+
+    The checkout camera is simulated per split (CNN error rate, substitution clones).
+    """
     scores = pd.read_parquet(scores_path, columns=["session_id", "label", "split", "pattern",
                                                    "rnn_score"])
     events = pd.read_parquet(events_path, columns=["session_id", "action", "itemid", "price", "dt_sec"])
@@ -154,6 +158,7 @@ def build_dataset(scores_path: Path, events_path: Path, cnn_meta_path: Path,
 # --------------------------------------------------------------------------- metrics & threshold
 
 def expected_calibration_error(y_true: np.ndarray, probabilities: np.ndarray, bins: int = 10) -> float:
+    """Expected calibration error over equal-width probability bins."""
     edges = np.linspace(0.0, 1.0, bins + 1)
     error = 0.0
     for lo, hi in zip(edges[:-1], edges[1:]):
@@ -179,6 +184,7 @@ def choose_threshold(y_true: np.ndarray, probabilities: np.ndarray) -> tuple[flo
 
 
 def evaluate(y_true: np.ndarray, probabilities: np.ndarray, threshold: float) -> dict:
+    """Classification metrics at a given threshold (precision, recall, F1, AUCs, confusion matrix)."""
     predicted = probabilities >= threshold
     tn, fp, fn, tp = confusion_matrix(y_true, predicted, labels=[0, 1]).ravel()
     return {
@@ -199,6 +205,7 @@ def evaluate(y_true: np.ndarray, probabilities: np.ndarray, threshold: float) ->
 # --------------------------------------------------------------------------- training
 
 def train(data: pd.DataFrame, out_dir: Path) -> dict:
+    """Fit on train, choose the threshold on validation, evaluate once on test, export the metadata."""
     train_df = data[data["split"] == "train"]
     val_df = data[data["split"] == "val"]
     test_df = data[data["split"] == "test"]
@@ -319,6 +326,7 @@ def train(data: pd.DataFrame, out_dir: Path) -> dict:
 
 
 def main() -> int:
+    """Command-line entry point."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--scores", type=Path, default=DEFAULT_SCORES)
     parser.add_argument("--events", type=Path, default=DEFAULT_EVENTS)

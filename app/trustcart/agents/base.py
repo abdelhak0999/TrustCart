@@ -30,6 +30,7 @@ def normalise(text: str) -> str:
 
 @dataclass(frozen=True)
 class AgentReply:
+    """Text written by an agent, with the backend that wrote it and why templates were used."""
     text: str
     source: str                 # which brain wrote it
     agent_name: str             # "Agent RNN", "Agent CNN", "Agent Décision", "Coordinateur"
@@ -45,6 +46,7 @@ class ChatModel:
                                      timeout=30.0, max_retries=1)
 
     def invoke(self, messages: list[dict]) -> str:
+        """Send the chat messages to the OpenAI-compatible endpoint and return the reply text."""
         response = self._client.chat.completions.create(model=self.model, messages=messages)
         return response.choices[0].message.content or ""
 
@@ -86,10 +88,12 @@ class BaseAgent:
 
     @property
     def llm_available(self) -> bool:
+        """True when a language model is configured and allowed by the current mode."""
         return self._llm is not None
 
     @property
     def source(self) -> str:
+        """Human-readable name of the backend that writes this agent's text."""
         if self._llm is None:
             return TEMPLATE_SOURCE
         backend = "Gemini" if self.settings.backend == "gemini" else "Ollama"

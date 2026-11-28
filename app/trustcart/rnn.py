@@ -23,6 +23,7 @@ def load_scorer():
 
 @lru_cache(maxsize=1)
 def metadata() -> dict:
+    """Training metadata of the RNN (threshold, test metrics, calibration, robustness)."""
     with open(RNN_DIR / "rnn_meta.json") as f:
         return json.load(f)
 
